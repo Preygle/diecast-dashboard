@@ -1,0 +1,966 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1:64 Diecast Price Dashboard</title>
+<style>
+/* ------------------------------------------------------------------ tokens */
+:root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --surface-2: #f4f4f1;
+  --plane: #f9f9f7;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --good: #006300;
+  --critical: #d03b3b;
+  --warn: #ec835a;
+  --s-amazon_in: #2a78d6;
+  --s-flipkart:  #eb6834;
+  --s-blinkit:   #1baf7a;
+  --s-instamart: #eda100;
+  --s-zepto:     #e87ba4;
+  --s-specialty: #4a3aa7;
+  --shadow: 0 1px 2px rgba(11,11,11,.05), 0 8px 24px rgba(11,11,11,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --surface-2: #232322; --plane: #0d0d0d;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --good: #0ca30c;
+    --s-amazon_in: #3987e5; --s-flipkart: #d95926; --s-blinkit: #199e70;
+    --s-instamart: #c98500; --s-zepto: #d55181; --s-specialty: #9085e9;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1: #1a1a19; --surface-2: #232322; --plane: #0d0d0d;
+  --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --good: #0ca30c;
+  --s-amazon_in: #3987e5; --s-flipkart: #d95926; --s-blinkit: #199e70;
+  --s-instamart: #c98500; --s-zepto: #d55181; --s-specialty: #9085e9;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--plane); color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+}
+button, input, select { font-family: inherit; font-size: inherit; }
+a { color: inherit; }
+
+/* ----------------------------------------------------------------- topbar */
+.topbar {
+  position: sticky; top: 0; z-index: 40;
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.topbar-inner {
+  max-width: 1560px; margin: 0 auto; padding: 10px 18px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.brand { font-size: 16px; font-weight: 650; letter-spacing: -.01em; white-space: nowrap; }
+.chip {
+  font-size: 11.5px; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--ink-2); background: var(--surface-2);
+  white-space: nowrap;
+}
+.searchwrap { flex: 1; min-width: 200px; position: relative; }
+.searchwrap input {
+  width: 100%; background: var(--plane); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 12px 8px 32px;
+}
+.searchwrap input:focus { outline: 2px solid var(--axis); outline-offset: -1px; }
+.searchwrap .ico {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  color: var(--muted); pointer-events: none;
+}
+.searchwrap kbd {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  font-size: 10px; color: var(--muted); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 5px; background: var(--surface-2);
+}
+.iconbtn {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--ink-2);
+  border-radius: 9px; padding: 7px 10px; cursor: pointer; line-height: 1;
+}
+.iconbtn:hover { color: var(--ink); }
+
+/* ------------------------------------------------------------------- tabs */
+nav.tabs { display: flex; gap: 2px; max-width: 1560px; margin: 0 auto; padding: 0 18px; }
+nav.tabs button {
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--muted); padding: 9px 13px; cursor: pointer;
+}
+nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+
+/* ------------------------------------------------------------------ shell */
+.shell { max-width: 1560px; margin: 0 auto; padding: 16px 18px 72px; }
+.cols { display: grid; grid-template-columns: 244px minmax(0,1fr); gap: 18px; align-items: start; }
+@media (max-width: 900px) {
+  .cols { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .sidebar.open { display: block; }
+}
+
+/* ---------------------------------------------------------------- filters */
+.sidebar {
+  position: sticky; top: 62px; max-height: calc(100vh - 80px); overflow-y: auto;
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 4px 12px 12px;
+}
+.fgroup { border-bottom: 1px solid var(--grid); padding: 10px 0; }
+.fgroup:last-child { border-bottom: 0; }
+.fgroup > summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center;
+  justify-content: space-between; font-size: 10.5px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted); padding: 2px 0;
+}
+.fgroup > summary::-webkit-details-marker { display: none; }
+.fgroup > summary::after { content: "−"; color: var(--muted); }
+.fgroup:not([open]) > summary::after { content: "+"; }
+.fopts { display: flex; flex-direction: column; gap: 1px; margin-top: 7px; }
+.fopt {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  background: none; border: 0; color: var(--ink-2); cursor: pointer;
+  padding: 4px 6px; border-radius: 7px; text-align: left; font-size: 12.5px;
+}
+.fopt:hover { background: var(--surface-2); color: var(--ink); }
+.fopt[aria-pressed="true"] { background: var(--surface-2); color: var(--ink); font-weight: 600; }
+.fopt .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fopt .ct { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
+.fopt .tick { width: 12px; color: var(--good); }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.morebtn {
+  background: none; border: 0; color: var(--muted); cursor: pointer;
+  font-size: 11.5px; padding: 3px 6px; text-align: left;
+}
+.morebtn:hover { color: var(--ink); }
+
+/* ---------------------------------------------------------------- toolbar */
+.toolbar {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.count { font-size: 13px; color: var(--ink-2); }
+.count strong { color: var(--ink); }
+select.sort, input.num {
+  background: var(--surface-1); color: var(--ink); border: 1px solid var(--border);
+  border-radius: 9px; padding: 6px 9px; font-size: 13px;
+}
+input.num { width: 78px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px;
+  border: 1px solid var(--axis); background: var(--surface-1); color: var(--ink);
+  border-radius: 999px; padding: 3px 5px 3px 10px;
+}
+.pill button { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0 3px; }
+.pill button:hover { color: var(--critical); }
+
+/* ------------------------------------------------------------------ cards */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.card {
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden; cursor: pointer;
+  display: flex; flex-direction: column; transition: transform .12s, box-shadow .12s;
+}
+.card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.card:focus-visible { outline: 2px solid var(--axis); }
+.shot {
+  position: relative; width: 100%; aspect-ratio: 1 / 1; background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.shot img { width: 100%; height: 100%; object-fit: contain; padding: 12px; }
+.shot .ph { color: var(--muted); font-size: 11.5px; }
+.badges { position: absolute; top: 8px; left: 8px; display: flex; flex-direction: column; gap: 4px; }
+.badge {
+  font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px;
+  background: var(--surface-1); border: 1px solid var(--border); color: var(--ink-2);
+}
+.badge.off { color: var(--good); border-color: var(--good); }
+.badge.oos { color: var(--critical); border-color: var(--critical); }
+.cbody { padding: 10px 11px 12px; display: flex; flex-direction: column; gap: 7px; flex: 1; }
+.ctitle {
+  font-size: 13px; line-height: 1.35; margin: 0;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.cmeta { font-size: 11px; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; }
+.cprice { display: flex; align-items: baseline; gap: 7px; margin-top: auto; }
+.cprice .amt { font-size: 20px; font-variant-numeric: tabular-nums; }
+.cprice .amt.none { font-size: 14px; color: var(--muted); }
+.cprice .from { font-size: 11px; color: var(--muted); }
+.csites { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
+
+/* ---------------------------------------------------------------- skeleton */
+.sk { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.sk .box { background: var(--surface-2); animation: pulse 1.3s ease-in-out infinite; }
+.sk .box.img { aspect-ratio: 1/1; }
+.sk .box.line { height: 10px; border-radius: 5px; margin: 10px 11px 0; }
+.sk .box.line.short { width: 45%; margin-bottom: 14px; }
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .55 } }
+
+/* ------------------------------------------------------------------ drawer */
+.scrim {
+  position: fixed; inset: 0; background: rgba(0,0,0,.42); z-index: 50;
+  opacity: 0; pointer-events: none; transition: opacity .16s;
+}
+.scrim.open { opacity: 1; pointer-events: auto; }
+.drawer {
+  position: fixed; top: 0; right: 0; height: 100%; width: min(520px, 100%);
+  background: var(--surface-1); border-left: 1px solid var(--border); z-index: 51;
+  transform: translateX(100%); transition: transform .18s ease-out;
+  display: flex; flex-direction: column;
+}
+.drawer.open { transform: none; }
+.dhead {
+  display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px;
+  border-bottom: 1px solid var(--grid);
+}
+.dbody { overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.dshot {
+  width: 100%; aspect-ratio: 4/3; background: var(--surface-2); border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.dshot img { width: 100%; height: 100%; object-fit: contain; padding: 14px; }
+.offer {
+  display: grid; grid-template-columns: 10px 1fr auto; gap: 9px; align-items: center;
+  padding: 9px 10px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--plane);
+}
+.offer.best { border-color: var(--good); }
+.offer .who { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.offer .who a { text-decoration: none; font-size: 13px; }
+.offer .who a:hover { text-decoration: underline; }
+.offer .sub { font-size: 10.5px; color: var(--muted); }
+.offer .right { text-align: right; }
+.offer .amt { font-variant-numeric: tabular-nums; font-size: 14px; }
+.offer .amt.dim { color: var(--muted); text-decoration: line-through; }
+.sectitle { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 7px; }
+
+/* ------------------------------------------------------------------ modal */
+.modal {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-48%) scale(.98);
+  width: min(520px, calc(100% - 32px)); max-height: 82vh; z-index: 60;
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s;
+  display: flex; flex-direction: column;
+}
+.modal.open { opacity: 1; pointer-events: auto; transform: translate(-50%,-50%) scale(1); }
+.mhead { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--grid); }
+.mbody { padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+
+/* ------------------------------------------------------------------ misc */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 10px; margin-bottom: 14px; }
+.tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 11px 13px; }
+.tile .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.tile .v { font-size: 23px; margin-top: 2px; }
+.tile .s { font-size: 11.5px; color: var(--ink-2); }
+.empty {
+  color: var(--ink-2); background: var(--surface-1); border: 1px dashed var(--axis);
+  border-radius: var(--radius); padding: 40px 24px; text-align: center; grid-column: 1/-1;
+}
+.ghost {
+  background: var(--surface-1); border: 1px solid var(--border); color: var(--ink-2);
+  border-radius: 9px; padding: 8px 14px; cursor: pointer;
+}
+.ghost:hover { color: var(--ink); }
+.center { display: flex; justify-content: center; margin-top: 20px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px 9px; border-bottom: 1px solid var(--grid); }
+th { color: var(--muted); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.bar { height: 8px; border-radius: 4px; background: var(--s-amazon_in); }
+.hidden { display: none !important; }
+.note { font-size: 12.5px; color: var(--ink-2); }
+.spark { width: 100%; height: 54px; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="brand">1:64 Diecast</span>
+    <button class="chip" id="regionChip" title="Change delivery region" style="cursor:pointer">…</button>
+    <span class="chip" id="capChip"></span>
+    <div class="searchwrap">
+      <span class="ico">⌕</span>
+      <input type="search" id="q" placeholder="Search model, brand, series…" autocomplete="off">
+      <kbd>/</kbd>
+    </div>
+    <button class="iconbtn hidden" id="filtToggle" title="Filters">☰</button>
+    <span class="chip" id="scrapedChip"></span>
+    <button class="iconbtn" id="themeBtn" title="Theme">◐</button>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="true"  data-tab="catalog">Catalog</button>
+    <button role="tab" aria-selected="false" data-tab="deals">Price gaps</button>
+    <button role="tab" aria-selected="false" data-tab="watch">Watchlist</button>
+    <button role="tab" aria-selected="false" data-tab="runs">Scrape log</button>
+  </nav>
+</header>
+
+<main class="shell">
+  <section id="tab-catalog">
+    <div class="tiles" id="tiles"></div>
+    <div class="cols">
+      <aside class="sidebar" id="sidebar"></aside>
+      <div>
+        <div class="toolbar">
+          <span class="count" id="count"></span>
+          <span id="activePills" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+          <span style="flex:1"></span>
+          <input class="num" type="number" id="minP" placeholder="min ₹">
+          <input class="num" type="number" id="maxP" placeholder="max ₹">
+          <select class="sort" id="sort">
+            <option value="price">Cheapest first</option>
+            <option value="price_desc">Dearest first</option>
+            <option value="savings">Biggest price gap</option>
+            <option value="sources">Most shops</option>
+            <option value="rating">Best rated</option>
+            <option value="title">A–Z</option>
+          </select>
+        </div>
+        <div class="grid" id="grid"></div>
+        <div class="center"><button class="ghost hidden" id="more">Load more</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-deals" class="hidden"></section>
+
+  <section id="tab-watch" class="hidden">
+    <div class="toolbar">
+      <input class="num" style="width:260px" type="search" id="wq" placeholder="Model to watch, e.g. treasure hunt">
+      <input class="num" type="number" id="wt" placeholder="target ₹">
+      <button class="ghost" id="wadd">Add</button>
+    </div>
+    <div id="watchBody"></div>
+  </section>
+
+  <section id="tab-runs" class="hidden"></section>
+</main>
+
+<div class="scrim" id="regionScrim"></div>
+<div class="modal" id="regionModal" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="mhead">
+    <strong style="flex:1">Delivery region</strong>
+    <button class="iconbtn" id="regionClose">✕</button>
+  </div>
+  <div class="mbody">
+    <p class="note">Blinkit, Instamart and Zepto quote prices per delivery
+    address, so this decides what their catalogue contains. Marketplace shops
+    are nationwide and unaffected.</p>
+    <div style="display:flex;gap:8px">
+      <input class="num" style="flex:1" id="regionQuery"
+             placeholder="City or 6-digit pincode, e.g. 560103" list="regionList">
+      <button class="ghost" id="regionGo">Set</button>
+    </div>
+    <datalist id="regionList"></datalist>
+    <div id="regionMsg" class="note"></div>
+    <div class="sectitle" style="margin-top:6px">Common cities</div>
+    <div id="regionChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    <div class="sectitle" style="margin-top:10px">Regions already scraped</div>
+    <div id="regionStored" class="note"></div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="dhead">
+    <strong id="dTitle" style="flex:1;font-size:14px;line-height:1.35"></strong>
+    <button class="iconbtn" id="dClose" title="Close">✕</button>
+  </div>
+  <div class="dbody" id="dBody"></div>
+</aside>
+
+<script>
+/* ====================================================================== state */
+let SOURCES = {}, KIND = {}, META = null, FACETS = null;
+const PAGE = 60;
+let offset = 0, loading = false, hasMore = false, lastRows = [];
+
+const sel = {
+  brand: new Set(), pack: new Set(), source: new Set(),
+  price_band: null, series: null, stock: null, realism: null,
+};
+
+const rupee = n => "₹" + Number(n).toLocaleString("en-IN", {maximumFractionDigits: 0});
+const el = (t, c) => { const n = document.createElement(t); if (c) n.className = c; return n; };
+const srcColor = s => KIND[s] === "specialty" ? "var(--s-specialty)" : `var(--s-${s}, var(--s-specialty))`;
+const label = s => SOURCES[s] || s;
+
+/* ====================================================================== chrome */
+document.getElementById("themeBtn").onclick = () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const next = cur === "dark" ? "light" : cur === "light" ? "" : "dark";
+  next ? document.documentElement.setAttribute("data-theme", next)
+       : document.documentElement.removeAttribute("data-theme");
+};
+document.getElementById("filtToggle").onclick =
+  () => document.getElementById("sidebar").classList.toggle("open");
+
+document.querySelectorAll("nav.tabs button").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll("nav.tabs button").forEach(x => x.setAttribute("aria-selected", x === b));
+    ["catalog","deals","watch","runs"].forEach(t =>
+      document.getElementById("tab-" + t).classList.toggle("hidden", t !== b.dataset.tab));
+    ({deals: loadDeals, watch: loadWatch, runs: loadRuns}[b.dataset.tab] || (()=>{}))();
+  };
+});
+
+addEventListener("keydown", e => {
+  if (e.key === "/" && document.activeElement.tagName !== "INPUT") {
+    e.preventDefault(); document.getElementById("q").focus();
+  }
+  if (e.key === "Escape") closeDrawer();
+});
+
+/* ====================================================================== boot */
+async function boot() {
+  META = await (await fetch("/api/meta")).json();
+  (META.sources || []).forEach(s => { SOURCES[s.name] = s.label || s.name; KIND[s.name] = s.kind; });
+  document.getElementById("regionChip").textContent =
+    `${META.region.label} · ${META.region.pincode} ▾`;
+  document.getElementById("capChip").textContent = "under " + rupee(META.max_price);
+  if (innerWidth <= 900) document.getElementById("filtToggle").classList.remove("hidden");
+
+  await Promise.all([loadStats(), loadFacets()]);
+  reload();
+}
+
+async function loadStats() {
+  const s = await (await fetch("/api/stats")).json();
+  const t = document.getElementById("tiles"); t.innerHTML = "";
+  const tile = (k, v, sub) => {
+    const n = el("div", "tile");
+    n.innerHTML = `<div class="k">${k}</div><div class="v">${v}</div><div class="s">${sub||""}</div>`;
+    t.appendChild(n);
+  };
+  tile("Products", s.products.toLocaleString("en-IN"), `${s.listings.toLocaleString("en-IN")} listings`);
+  tile("Shops live", s.sources, `${(META.sources||[]).length} configured`);
+  tile("Cheapest", s.cheapest ? rupee(s.cheapest) : "—", "in stock");
+  tile("Out of stock", (s.out_of_stock||0).toLocaleString("en-IN"), "listings unavailable");
+  const top = s.per_source[0];
+  tile("Biggest shop", top ? label(top.source) : "—", top ? `${top.listings} listings` : "");
+  document.getElementById("scrapedChip").textContent =
+    s.last_scraped ? "updated " + new Date(s.last_scraped).toLocaleDateString("en-IN")
+                   : "never scraped";
+}
+
+/* ====================================================================== facets */
+async function loadFacets() {
+  FACETS = await (await fetch("/api/facets")).json();
+  renderFacets();
+}
+
+/* Long lists (20+ shops) collapse to a top slice with a "show all" toggle,
+   so the sidebar stays scannable instead of becoming a wall of names. */
+const expanded = {};
+
+function facetGroup(key, title, items, isOn, toggle, opts = {}) {
+  const d = el("details", "fgroup");
+  d.open = opts.open !== false;
+  const sum = el("summary"); sum.textContent = title; d.appendChild(sum);
+  const box = el("div", "fopts");
+
+  const limit = expanded[key] ? items.length : (opts.limit || 8);
+  items.slice(0, limit).forEach(it => {
+    const b = el("button", "fopt");
+    const on = isOn(it);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.innerHTML = `<span class="tick">${on ? "✓" : ""}</span>`;
+    if (opts.colored) {
+      const dot = el("span", "dot"); dot.style.background = srcColor(it.name); b.appendChild(dot);
+    }
+    const nm = el("span", "nm");
+    nm.textContent = opts.display ? opts.display(it.name) : it.name;
+    nm.title = nm.textContent;
+    b.appendChild(nm);
+    const ct = el("span", "ct"); ct.textContent = it.n.toLocaleString("en-IN"); b.appendChild(ct);
+    b.onclick = () => { toggle(it); renderFacets(); reload(); };
+    box.appendChild(b);
+  });
+
+  if (items.length > (opts.limit || 8)) {
+    const m = el("button", "morebtn");
+    m.textContent = expanded[key] ? "− show fewer" : `+ ${items.length - (opts.limit || 8)} more`;
+    m.onclick = () => { expanded[key] = !expanded[key]; renderFacets(); };
+    box.appendChild(m);
+  }
+  d.appendChild(box);
+  return d;
+}
+
+function renderFacets() {
+  if (!FACETS) return;
+  const bar = document.getElementById("sidebar");
+  bar.innerHTML = "";
+  const multi = set => it => set.has(it.name) ? set.delete(it.name) : set.add(it.name);
+  const single = key => it => { sel[key] = sel[key] === it.name ? null : it.name; };
+
+  bar.appendChild(facetGroup("brand", "Brand", FACETS.brands || [],
+    it => sel.brand.has(it.name), multi(sel.brand), {limit: 8}));
+  bar.appendChild(facetGroup("realism", "Type", FACETS.realism || [],
+    it => sel.realism === it.name, single("realism"), {limit: 6}));
+  bar.appendChild(facetGroup("stock", "Availability", FACETS.availability || [],
+    it => sel.stock === it.name, single("stock"), {limit: 4}));
+  bar.appendChild(facetGroup("price", "Price", FACETS.prices || [],
+    it => sel.price_band === it.name, single("price_band"), {limit: 6}));
+  bar.appendChild(facetGroup("pack", "Pack size", FACETS.packs || [],
+    it => sel.pack.has(it.name), multi(sel.pack), {limit: 5}));
+  bar.appendChild(facetGroup("platform", "Shop", FACETS.platforms || [],
+    it => sel.source.has(it.name), multi(sel.source),
+    {limit: 8, colored: true, display: label}));
+  bar.appendChild(facetGroup("series", "Series", FACETS.series || [],
+    it => sel.series === it.name, single("series"), {limit: 6, open: false}));
+
+  renderPills();
+}
+
+function renderPills() {
+  const host = document.getElementById("activePills");
+  host.innerHTML = "";
+  const add = (text, clear) => {
+    const p = el("span", "pill");
+    p.appendChild(document.createTextNode(text));
+    const x = el("button"); x.textContent = "✕"; x.title = "Remove";
+    x.onclick = () => { clear(); renderFacets(); reload(); };
+    p.appendChild(x); host.appendChild(p);
+  };
+  sel.brand.forEach(v => add(v, () => sel.brand.delete(v)));
+  sel.pack.forEach(v => add(v, () => sel.pack.delete(v)));
+  sel.source.forEach(v => add(label(v), () => sel.source.delete(v)));
+  ["realism","stock","price_band","series"].forEach(k => {
+    if (sel[k]) add(sel[k], () => { sel[k] = null; });
+  });
+  if (host.children.length > 1) {
+    const c = el("span", "pill"); c.style.borderColor = "var(--border)";
+    c.appendChild(document.createTextNode("clear all"));
+    const x = el("button"); x.textContent = "✕";
+    x.onclick = () => {
+      sel.brand.clear(); sel.pack.clear(); sel.source.clear();
+      sel.realism = sel.stock = sel.price_band = sel.series = null;
+      renderFacets(); reload();
+    };
+    c.appendChild(x); host.appendChild(c);
+  }
+}
+
+/* ====================================================================== list */
+function params(off) {
+  const p = new URLSearchParams();
+  const q = document.getElementById("q").value.trim();
+  if (q) p.set("q", q);
+  sel.source.forEach(v => p.append("source", v));
+  sel.brand.forEach(v => p.append("brand", v));
+  sel.pack.forEach(v => p.append("pack", v));
+  if (sel.price_band) p.set("price_band", sel.price_band);
+  if (sel.series) p.set("series", sel.series);
+  if (sel.realism) p.set("realism", sel.realism);
+  if (sel.stock === "In stock") p.set("in_stock", "true");
+  if (sel.stock === "Out of stock") p.set("oos_only", "true");
+  const mn = document.getElementById("minP").value; if (mn) p.set("min_price", mn);
+  const mx = document.getElementById("maxP").value; if (mx) p.set("max_price", mx);
+  p.set("sort", document.getElementById("sort").value);
+  p.set("limit", PAGE); p.set("offset", off);
+  return p;
+}
+
+let timer;
+["q","minP","maxP"].forEach(id => document.getElementById(id).oninput = () => {
+  clearTimeout(timer); timer = setTimeout(reload, 280);
+});
+document.getElementById("sort").onchange = reload;
+document.getElementById("more").onclick = () => fetchPage(false);
+
+function skeletons(n) {
+  const grid = document.getElementById("grid");
+  for (let i = 0; i < n; i++) {
+    const s = el("div", "sk");
+    s.innerHTML = `<div class="box img"></div><div class="box line"></div>
+                   <div class="box line short"></div>`;
+    grid.appendChild(s);
+  }
+}
+
+function reload() { offset = 0; document.getElementById("grid").innerHTML = ""; fetchPage(true); }
+
+async function fetchPage(fresh) {
+  if (loading) return;
+  loading = true;
+  const grid = document.getElementById("grid");
+  document.getElementById("more").classList.add("hidden");
+  if (fresh) skeletons(12);
+
+  const rows = await (await fetch("/api/products?" + params(offset))).json();
+  if (fresh) grid.innerHTML = "";
+  hasMore = rows.length ? !!rows[0]._has_more : false;
+
+  if (!rows.length && fresh) {
+    grid.innerHTML = `<div class="empty"><div style="font-size:26px">🔍</div>
+      <p>Nothing matches those filters.</p>
+      <p class="note">Try clearing a filter, or run <code>python cli.py scrape</code>
+      if the database is empty.</p></div>`;
+  } else {
+    rows.forEach(r => grid.appendChild(card(r)));
+    lastRows = fresh ? rows : lastRows.concat(rows);
+  }
+
+  offset += rows.length;
+  document.getElementById("count").innerHTML =
+    `<strong>${offset.toLocaleString("en-IN")}</strong>${hasMore ? "+" : ""} product${offset === 1 ? "" : "s"}`;
+  document.getElementById("more").classList.toggle("hidden", !hasMore);
+  loading = false;
+}
+
+function card(r) {
+  const c = el("article", "card");
+  c.tabIndex = 0;
+  const open = () => openDrawer(r);
+  c.onclick = open;
+  c.onkeydown = e => { if (e.key === "Enter") open(); };
+
+  const shot = el("div", "shot");
+  if (r.image_url) {
+    const img = el("img");
+    img.src = r.image_url; img.loading = "lazy"; img.alt = r.title;
+    img.onerror = () => { shot.innerHTML = '<span class="ph">no image</span>'; };
+    shot.appendChild(img);
+  } else shot.innerHTML = '<span class="ph">no image</span>';
+
+  const badges = el("div", "badges");
+  const cheapest = r.offers.find(o => o.price === r.best_price);
+  if (cheapest && cheapest.mrp && cheapest.mrp > cheapest.price) {
+    const b = el("span", "badge off");
+    b.textContent = Math.round(100 - (cheapest.price / cheapest.mrp) * 100) + "% off";
+    badges.appendChild(b);
+  }
+  if (r.buyable_count === 0) {
+    const b = el("span", "badge oos"); b.textContent = "out of stock"; badges.appendChild(b);
+  }
+  shot.appendChild(badges);
+  c.appendChild(shot);
+
+  const body = el("div", "cbody");
+  const h = el("p", "ctitle"); h.textContent = r.title; body.appendChild(h);
+
+  const meta = el("div", "cmeta");
+  [r.brand, r.realism, r.pack_size > 1 ? `${r.pack_size}-pack` : null]
+    .filter(Boolean).forEach(x => { const s = el("span"); s.textContent = x; meta.appendChild(s); });
+  body.appendChild(meta);
+
+  const pr = el("div", "cprice");
+  const amt = el("span", "amt" + (r.best_price == null ? " none" : ""));
+  amt.textContent = r.best_price == null ? "Unavailable" : rupee(r.best_price);
+  pr.appendChild(amt);
+  if (r.savings > 0) { const f = el("span", "from"); f.textContent = "save " + rupee(r.savings); pr.appendChild(f); }
+  body.appendChild(pr);
+
+  const sites = el("div", "csites");
+  [...new Set(r.offers.map(o => o.source))].slice(0, 6).forEach(s => {
+    const d = el("span", "dot"); d.style.background = srcColor(s); d.title = label(s);
+    sites.appendChild(d);
+  });
+  const n = el("span");
+  n.textContent = `${r.source_count} shop${r.source_count === 1 ? "" : "s"}`;
+  sites.appendChild(n);
+  body.appendChild(sites);
+
+  c.appendChild(body);
+  return c;
+}
+
+/* ==================================================================== drawer */
+const scrim = document.getElementById("scrim"), drawer = document.getElementById("drawer");
+scrim.onclick = closeDrawer;
+document.getElementById("dClose").onclick = closeDrawer;
+function closeDrawer() {
+  drawer.classList.remove("open"); scrim.classList.remove("open");
+  drawer.setAttribute("aria-hidden", "true");
+}
+
+async function openDrawer(r) {
+  document.getElementById("dTitle").textContent = r.title;
+  const b = document.getElementById("dBody"); b.innerHTML = "";
+  drawer.classList.add("open"); scrim.classList.add("open");
+  drawer.setAttribute("aria-hidden", "false");
+
+  const shot = el("div", "dshot");
+  if (r.image_url) { const i = el("img"); i.src = r.image_url; i.alt = r.title; shot.appendChild(i); }
+  else shot.innerHTML = '<span class="ph">no image</span>';
+  b.appendChild(shot);
+
+  const facts = el("div", "cmeta");
+  [r.brand, r.realism, r.series, r.pack_size > 1 ? `${r.pack_size}-pack` : "Single",
+   r.rating ? `${r.rating}★` : null].filter(Boolean)
+    .forEach(x => { const s = el("span", "chip"); s.textContent = x; facts.appendChild(s); });
+  b.appendChild(facts);
+
+  const sec = el("div");
+  const st = el("div", "sectitle");
+  st.textContent = `Where to buy — ${r.offers.length} listing${r.offers.length === 1 ? "" : "s"}`;
+  sec.appendChild(st);
+  const list = el("div"); list.style.display = "grid"; list.style.gap = "7px";
+
+  [...r.offers].sort((a, b2) => {
+    const av = a.in_stock && a.price != null, bv = b2.in_stock && b2.price != null;
+    if (av !== bv) return av ? -1 : 1;
+    if (a.price == null) return 1;
+    if (b2.price == null) return -1;
+    return a.price - b2.price;
+  }).forEach(o => {
+    const row = el("div", "offer" + (o.price === r.best_price && o.in_stock ? " best" : ""));
+    const d = el("span", "dot"); d.style.background = srcColor(o.source); row.appendChild(d);
+
+    const who = el("div", "who");
+    const a = el("a"); a.textContent = label(o.source);
+    if (o.url) { a.href = o.url; a.target = "_blank"; a.rel = "noopener"; }
+    who.appendChild(a);
+    const sub = el("span", "sub");
+    sub.textContent = [o.delivery_eta, o.in_stock ? null : "out of stock",
+                       o.price == null ? "see options" : null].filter(Boolean).join(" · ")
+                      || (o.raw_title || "").slice(0, 46);
+    who.appendChild(sub);
+    row.appendChild(who);
+
+    const right = el("div", "right");
+    const amt = el("div", "amt" + (o.in_stock && o.price != null ? "" : " dim"));
+    amt.textContent = o.price == null ? "—" : rupee(o.price);
+    right.appendChild(amt);
+    if (o.mrp && o.price && o.mrp > o.price) {
+      const s = el("div", "sub");
+      s.textContent = `${Math.round(100 - (o.price / o.mrp) * 100)}% off ${rupee(o.mrp)}`;
+      right.appendChild(s);
+    }
+    row.appendChild(right);
+    list.appendChild(row);
+  });
+  sec.appendChild(list);
+  b.appendChild(sec);
+
+  const hsec = el("div");
+  hsec.innerHTML = '<div class="sectitle">Price history</div>';
+  const holder = el("div"); holder.className = "note"; holder.textContent = "loading…";
+  hsec.appendChild(holder); b.appendChild(hsec);
+  try {
+    const res = await fetch(`/api/products/${r.id}/history`);
+    const hist = res.ok ? await res.json() : [];
+    holder.replaceWith(sparkline(Array.isArray(hist) ? hist : []));
+  } catch { holder.textContent = "No price changes recorded yet."; }
+}
+
+function sparkline(hist) {
+  if (!hist.length) {
+    const n = el("div", "note"); n.textContent = "No price changes recorded yet."; return n;
+  }
+  const box = el("div");
+  const bySrc = {};
+  hist.forEach(h => (bySrc[h.source] ||= []).push(h));
+  const times = hist.map(h => +new Date(h.ts)), prices = hist.map(h => h.price);
+  const t0 = Math.min(...times), t1 = Math.max(...times);
+  const p0 = Math.min(...prices), p1 = Math.max(...prices);
+  const W = 480, H = 54, pad = 4;
+  const x = t => t1 === t0 ? W / 2 : pad + ((t - t0) / (t1 - t0)) * (W - pad * 2);
+  const y = p => p1 === p0 ? H / 2 : H - pad - ((p - p0) / (p1 - p0)) * (H - pad * 2);
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "spark");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `Price history ${rupee(p0)} to ${rupee(p1)}`);
+  for (const [src, pts] of Object.entries(bySrc)) {
+    pts.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", pts.map((p, i) =>
+      `${i ? "L" : "M"}${x(+new Date(p.ts)).toFixed(1)},${y(p.price).toFixed(1)}`).join(" "));
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", srcColor(src));
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("stroke-linejoin", "round");
+    path.setAttribute("stroke-linecap", "round");
+    svg.appendChild(path);
+  }
+  box.appendChild(svg);
+  const cap = el("div", "note");
+  cap.textContent = `${rupee(p0)} – ${rupee(p1)} observed across ` +
+    Object.keys(bySrc).map(label).join(", ");
+  box.appendChild(cap);
+  return box;
+}
+
+/* ================================================================ other tabs */
+async function loadDeals() {
+  const host = document.getElementById("tab-deals");
+  const rows = await (await fetch("/api/deals?limit=30")).json();
+  if (!rows.length) {
+    host.innerHTML = `<div class="empty">No cross-shop matches yet — a gap needs the
+      same model found in two or more shops.</div>`;
+    return;
+  }
+  const max = Math.max(...rows.map(r => r.worst_price - r.best_price));
+  const tbl = el("table");
+  tbl.innerHTML = `<thead><tr><th>Model</th><th class="num">Cheapest</th>
+    <th class="num">Dearest</th><th class="num">Gap</th><th style="width:26%">Spread</th></tr></thead>`;
+  const tb = el("tbody");
+  rows.forEach(r => {
+    const gap = r.worst_price - r.best_price;
+    const tr = el("tr");
+    tr.innerHTML = `<td>${r.title}</td><td class="num">${rupee(r.best_price)}</td>
+      <td class="num">${rupee(r.worst_price)}</td><td class="num">${rupee(gap)}</td>`;
+    const td = el("td"); const bar = el("div", "bar");
+    bar.style.width = Math.max(4, (gap / max) * 100) + "%";
+    td.appendChild(bar); tr.appendChild(td); tb.appendChild(tr);
+  });
+  tbl.appendChild(tb);
+  host.innerHTML = "";
+  host.appendChild(tbl);
+  const n = el("p", "note");
+  n.textContent = "Gap is the difference between the cheapest and dearest shop for the same model.";
+  host.appendChild(n);
+}
+
+document.getElementById("wadd").onclick = async () => {
+  const q = document.getElementById("wq").value.trim();
+  if (!q) return;
+  const t = document.getElementById("wt").value;
+  await fetch("/api/watchlist", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({query: q, target_price: t ? Number(t) : null})});
+  document.getElementById("wq").value = ""; document.getElementById("wt").value = "";
+  loadWatch();
+};
+
+async function loadWatch() {
+  const host = document.getElementById("watchBody");
+  const rows = await (await fetch("/api/watchlist")).json();
+  if (!rows.length) { host.innerHTML = `<div class="empty">Watchlist is empty.</div>`; return; }
+  host.innerHTML = "";
+  rows.forEach(w => {
+    const c = el("div", "card"); c.style.cursor = "default"; c.style.padding = "12px";
+    const head = el("div", "cprice");
+    const t = el("strong"); t.textContent = w.query; head.appendChild(t);
+    if (w.best_price) { const b = el("span", "amt"); b.textContent = rupee(w.best_price); head.appendChild(b); }
+    if (w.target_price) {
+      const chip = el("span", "chip");
+      chip.textContent = w.hit ? `at/under target ${rupee(w.target_price)}` : `target ${rupee(w.target_price)}`;
+      if (w.hit) { chip.style.color = "var(--good)"; chip.style.borderColor = "var(--good)"; }
+      head.appendChild(chip);
+    }
+    const del = el("button", "ghost"); del.textContent = "Remove"; del.style.marginLeft = "auto";
+    del.onclick = async () => { await fetch("/api/watchlist/" + w.id, {method: "DELETE"}); loadWatch(); };
+    head.appendChild(del);
+    c.appendChild(head);
+    (w.matches || []).forEach(m => {
+      const row = el("div", "offer"); row.style.marginTop = "7px";
+      const d = el("span", "dot"); d.style.background = srcColor(m.source);
+      const who = el("div", "who");
+      const a = el("a"); a.textContent = m.title; if (m.url) { a.href = m.url; a.target = "_blank"; }
+      who.appendChild(a);
+      const sub = el("span", "sub"); sub.textContent = label(m.source); who.appendChild(sub);
+      const right = el("div", "right"); const amt = el("div", "amt");
+      amt.textContent = rupee(m.best_price); right.appendChild(amt);
+      row.append(d, who, right); c.appendChild(row);
+    });
+    host.appendChild(c);
+  });
+}
+
+async function loadRuns() {
+  const host = document.getElementById("tab-runs");
+  const rows = await (await fetch("/api/runs?limit=40")).json();
+  if (!rows.length) { host.innerHTML = `<div class="empty">No scrape runs recorded.</div>`; return; }
+  const tbl = el("table");
+  tbl.innerHTML = `<thead><tr><th>Shop</th><th>Started</th><th class="num">Items</th>
+    <th>Result</th></tr></thead>`;
+  const tb = el("tbody");
+  rows.forEach(r => {
+    const tr = el("tr");
+    tr.innerHTML = `<td><span class="dot" style="display:inline-block;background:${srcColor(r.source)}"></span>
+        ${label(r.source)}</td>
+      <td>${new Date(r.started_at).toLocaleString("en-IN")}</td>
+      <td class="num">${r.items}</td>
+      <td style="color:${r.ok ? "var(--good)" : "var(--critical)"}">${r.ok ? "ok" : "failed"}${r.error ? " — " + r.error : ""}</td>`;
+    tb.appendChild(tr);
+  });
+  tbl.appendChild(tb);
+  host.innerHTML = ""; host.appendChild(tbl);
+}
+
+/* ==================================================================== region */
+const regionModal = document.getElementById("regionModal");
+const regionScrim = document.getElementById("regionScrim");
+function closeRegion() {
+  regionModal.classList.remove("open"); regionScrim.classList.remove("open");
+  regionModal.setAttribute("aria-hidden", "true");
+}
+regionScrim.onclick = closeRegion;
+document.getElementById("regionClose").onclick = closeRegion;
+document.getElementById("regionChip").onclick = openRegion;
+
+async function openRegion() {
+  regionModal.classList.add("open"); regionScrim.classList.add("open");
+  regionModal.setAttribute("aria-hidden", "false");
+  document.getElementById("regionMsg").textContent = "";
+  const data = await (await fetch("/api/regions")).json();
+
+  const dl = document.getElementById("regionList"); dl.innerHTML = "";
+  data.known.forEach(r => {
+    const o = el("option"); o.value = r.label; o.label = `${r.pincode} · ${r.state}`;
+    dl.appendChild(o);
+  });
+
+  const chips = document.getElementById("regionChips"); chips.innerHTML = "";
+  data.known.slice(0, 14).forEach(r => {
+    const b = el("button", "chip"); b.style.cursor = "pointer";
+    b.textContent = r.label;
+    if (r.pincode === data.current.pincode) { b.style.borderColor = "var(--good)"; b.style.color = "var(--good)"; }
+    b.onclick = () => applyRegion(r.label);
+    chips.appendChild(b);
+  });
+
+  const stored = document.getElementById("regionStored");
+  stored.textContent = data.stored.length
+    ? data.stored.map(s2 => `${s2.region} (${s2.n.toLocaleString("en-IN")} listings)`).join(" · ")
+    : "none yet";
+}
+
+document.getElementById("regionGo").onclick =
+  () => applyRegion(document.getElementById("regionQuery").value);
+document.getElementById("regionQuery").addEventListener("keydown", e => {
+  if (e.key === "Enter") applyRegion(e.target.value);
+});
+
+async function applyRegion(query) {
+  const msg = document.getElementById("regionMsg");
+  if (!query || !query.trim()) { msg.textContent = "Enter a city or pincode."; return; }
+  msg.textContent = "Looking up…";
+  const res = await fetch("/api/region", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({query: query.trim()}),
+  });
+  const data = await res.json();
+  if (!res.ok) { msg.textContent = data.detail || "Could not set that region."; return; }
+  msg.textContent = `Set to ${data.region.label}. Reloading…`;
+  setTimeout(() => location.reload(), 700);
+}
+
+boot();
+</script>
+</body>
+</html>

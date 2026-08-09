@@ -1,0 +1,166 @@
+# Hot Wheels unified price dashboard - configuration
+
+region:
+  label: "VIT Chennai"
+  pincode: "600127"
+  city: "Chennai"
+  # Coordinates the quick-commerce adapters use to set a delivery location.
+  # Do not edit by hand - use `python cli.py region set <city|pincode>`,
+  # or the region picker in the dashboard header.
+  lat: 12.8406
+  lon: 80.1534
+
+# Hard ceiling. Anything above this is discarded at parse time, never stored.
+max_price: 2000
+currency: "INR"
+
+# Search terms fanned out to every enabled source. The scrapers only find what
+# they search for, so every tracked brand needs its own terms. Results are
+# filtered again on arrival: brand must be recognised AND the scale must be
+# 1:64-class, so a Maisto 1:24 hit here is discarded before it is stored.
+queries:
+  # Hot Wheels
+  - "hot wheels"
+  - "hot wheels set"
+  - "hot wheels track set"
+  - "hot wheels 5 pack"
+  - "hot wheels premium"
+  - "hot wheels monster trucks"
+  # Matchbox
+  - "matchbox car"
+  - "matchbox 1:64"
+  - "matchbox 5 pack"
+  # Majorette
+  - "majorette car"
+  - "majorette 1:64"
+  - "majorette gift pack"
+  # Other 1:64 collector brands
+  - "tomica car"
+  - "mini gt 1:64"
+  - "m2 machines 1:64"
+  - "greenlight 1:64"
+  - "auto world 1:64"
+  - "johnny lightning 1:64"
+  - "tarmac works 1:64"
+  - "maisto 1:64"
+  - "bburago 1:64"
+  # Sets specifically
+  - "diecast car set 1:64"
+  - "1:64 diecast track set"
+
+sources:
+  amazon_in:
+    enabled: true
+    max_pages: 3
+  flipkart:
+    enabled: true
+    max_pages: 3
+  blinkit:
+    enabled: true
+  instamart:
+    enabled: true
+  zepto:
+    enabled: true
+
+  # Specialty and general shops running on Shopify. Every Shopify store exposes
+  # /products.json and /search/suggest.json, so one adapter serves them all and
+  # adding a shop is a line here - no new scraper.
+  #
+  #   mode: catalog  read the whole catalogue and filter locally. Right for a
+  #                  small specialist: complete, and one request per 250 items.
+  #   mode: search   run the configured queries. Right for a big general
+  #                  retailer, where paging the catalogue means 40,000 books.
+  shopify:
+    enabled: true
+    mode: catalog
+    max_pages: 6
+    stores:
+      - name: kinderlogs
+        label: "Kinder Logs"
+        domain: kinderlogs.in
+      - name: itsfun
+        label: "ItsFun"
+        domain: itsfun.in
+      - name: zoomsters
+        label: "Zoomsters"
+        domain: zoomsters.in
+      - name: blueballoon
+        label: "Blue Balloon Toys"
+        domain: blueballoontoys.com
+      - name: giftgalaxy
+        label: "Gift Galaxy"
+        domain: giftgalaxy.in
+      - name: peppystore
+        label: "The Peppy Store"
+        domain: thepeppystore.in
+      - name: toycollectors
+        label: "Toy Collectors India"
+        domain: toycollectorsindia.com
+      - name: kidsinfy
+        label: "Kidsinfy"
+        domain: kidsinfy.in
+      # General toy retailers: their catalogues are mostly not diecast, so
+      # search a few terms rather than paging thousands of unrelated products.
+      - name: funcorp
+        label: "FunCorp"
+        domain: funcorp.in
+        mode: search
+      - name: toysindia
+        label: "Toys India"
+        domain: toys-india.com
+        mode: search
+      - name: toycra
+        label: "Toycra"
+        domain: toycra.com
+        mode: search
+      - name: krazycaterpillar
+        label: "Krazy Caterpillar"
+        domain: krazycaterpillar.com
+        mode: search
+      - name: toymarche
+        label: "Toymarche"
+        domain: toymarche.com
+        mode: search
+      - name: jaimantoys
+        label: "Jaiman Toys"
+        domain: jaimantoys.com
+        mode: search
+      - name: crossword
+        label: "Crossword"
+        domain: crossword.in
+        mode: search          # a bookshop; searching beats paging the catalogue
+      - name: bigsmall
+        label: "Bigsmall"
+        domain: bigsmall.in
+        mode: search
+
+  # WooCommerce shops expose a public Store API at /wp-json/wc/store/v1.
+  woocommerce:
+    enabled: true
+    per_page: 50
+    stores:
+      - name: planetsuperheroes
+        label: "Planet Superheroes"
+        domain: planetsuperheroes.com
+      - name: thetoysindia
+        label: "The Toys India"
+        domain: thetoysindia.com
+      - name: gbuy
+        label: "Gbuy"
+        domain: gbuy.in
+
+# Stores with no public product API - they run custom platforms, so the generic
+# Shopify/WooCommerce adapters cannot reach them. Each needs a bespoke HTML
+# scraper like Amazon's:
+#   karzanddolls.com     custom PHP storefront
+#   toyworldjaipur.in    custom, no recognisable platform
+
+scrape:
+  # Polite delay between page fetches, seconds.
+  delay: 1.5
+  timeout: 30
+  # Fuzzy-match threshold (0-100) for grouping listings into one product.
+  match_threshold: 87
+  headless: true
+
+database: "hotwheels.db"

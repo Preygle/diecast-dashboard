@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Playwright itself is imported lazily, so the browser binaries are not
+      # needed for the test suite - only for live scraping.
+      - name: Run tests
+        run: |
+          python tests/test_normalize.py
+          python tests/test_regroup.py
+          python tests/test_stock.py
+
+      - name: Check the app imports and the CLI responds
+        run: |
+          python -c "import hotwheels.server, hotwheels.pipeline, hotwheels.regions"
+          python cli.py --help
+          python cli.py region list
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check hotwheels tests cli.py

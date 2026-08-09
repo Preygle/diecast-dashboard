@@ -1,0 +1,26 @@
+services:
+  dashboard:
+    build: .
+    image: diecast-dashboard:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      # Scraped prices and the saved quick-commerce browser profile. Both are
+      # state: keep them out of the image so rebuilds do not wipe them.
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml
+    environment:
+      HOTWHEELS_DB: /app/data/hotwheels.db
+    restart: unless-stopped
+
+  # One-shot scraper: `docker compose run --rm scrape`
+  scrape:
+    build: .
+    image: diecast-dashboard:latest
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml
+    environment:
+      HOTWHEELS_DB: /app/data/hotwheels.db
+    command: ["python", "cli.py", "scrape"]
+    profiles: ["tools"]

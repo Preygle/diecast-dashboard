@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diecast-dashboard"
+version = "1.0.0"
+description = "Track 1:64 diecast prices across Indian marketplaces, quick-commerce apps and specialty shops"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = [
+    "hot-wheels", "matchbox", "diecast", "price-tracker", "price-comparison",
+    "web-scraping", "playwright", "india", "fastapi", "shopify",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+]
+dependencies = [
+    "httpx[http2]>=0.28.1",
+    "selectolax>=0.3.27",
+    "rapidfuzz>=3.10.1",
+    # fastapi must stay >=0.121 so it works with starlette >=0.49, which
+    # sse-starlette (common in shared environments) requires.
+    "fastapi>=0.121",
+    "starlette>=0.49.1",
+    "uvicorn[standard]>=0.34.0",
+    "PyYAML>=6.0.2",
+    "playwright>=1.49.1",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.6"]
+
+[project.urls]
+Homepage = "https://github.com/YOUR_USERNAME/diecast-dashboard"
+Issues = "https://github.com/YOUR_USERNAME/diecast-dashboard/issues"
+
+[project.scripts]
+diecast = "hotwheels.cli:main"
+
+[tool.setuptools]
+packages = ["hotwheels", "hotwheels.sources"]
+
+[tool.setuptools.package-data]
+hotwheels = ["../web/*.html", "../config.yaml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "E501",   # long lines: SQL and regex tables read better unwrapped
+    "B008",   # FastAPI dependency defaults (Query(...)) are the framework idiom
+]

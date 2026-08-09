@@ -1,0 +1,23 @@
+# Scraped data and browser session state
+hotwheels.db
+hotwheels.db-wal
+hotwheels.db-shm
+data/
+.browser_profile/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.env
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.ruff_cache/
