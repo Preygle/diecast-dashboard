@@ -86,10 +86,15 @@ class ShopifyStore(HttpSource):
                     break
                 if not products:
                     break
+                kept_before = len(out)
                 for p in products:
                     item = self._from_product(p)
                     if item:
                         out.setdefault(item.source_sku, item)
+                # Raw vs kept separates "the shop served nothing" from "the
+                # filters rejected everything" - they need opposite fixes.
+                print(f"  [{self.name}] page {page}: {len(products)} raw, "
+                      f"{len(out) - kept_before} kept")
                 if len(products) < 250:
                     break
                 await self.pause()

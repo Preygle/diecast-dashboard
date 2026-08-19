@@ -27,7 +27,9 @@ def cmd_scrape(args: argparse.Namespace) -> int:
     print(f"Region: {cfg.region.label} ({cfg.region.pincode})  |  cap ₹{cfg.max_price:.0f}")
     report = asyncio.run(pipeline.scrape(cfg, only=args.only))
     print(report.render())
-    return 0 if any(r.ok and r.items for r in report.results) else 1
+    # Exit non-zero only when a source actually errored. Finding nothing is a
+    # legitimate result and must not fail a scheduled run.
+    return 0 if all(r.ok for r in report.results) else 1
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
