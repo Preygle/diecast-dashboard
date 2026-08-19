@@ -1,0 +1,60 @@
+name: Watch (marketplaces)
+
+# Every 5 minutes for the HTTP-only shops. These need no browser, so a run
+# takes well under a minute.
+#
+# GitHub's scheduled triggers are best-effort: under load they run late or are
+# skipped entirely, and */5 is the platform minimum. Treat this as "roughly
+# every 5-15 minutes", not a guarantee.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+# A slow run must never pile up on top of the next scheduled one.
+concurrency:
+  group: watch-fast
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # The database carries alert_state. Without it every run would look like
+      # a first run and re-announce the whole catalogue.
+      - name: Restore database
+        uses: actions/cache/restore@v4
+        with:
+          path: data/hotwheels.db
+          key: diecast-db-${{ github.run_id }}
+          restore-keys: diecast-db-
+
+      - name: Scrape marketplaces
+        env:
+          HOTWHEELS_DB: data/hotwheels.db
+        run: python cli.py scrape --only blueballoon funcorp toymarche crossword
+
+      - name: Send alerts
+        env:
+          HOTWHEELS_DB: data/hotwheels.db
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python cli.py alerts
+
+      - name: Save database
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/hotwheels.db
+          key: diecast-db-${{ github.run_id }}

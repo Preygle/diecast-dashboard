@@ -7,7 +7,7 @@
 Finds the same model everywhere it is sold, tells you which shop is cheapest,
 and remembers what it used to cost.
 
-[![CI](https://github.com/YOUR_USERNAME/diecast-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/diecast-dashboard/actions/workflows/ci.yml)
+[![CI](https://github.com/Preygle/diecast-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Preygle/diecast-dashboard/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -49,7 +49,7 @@ the cheapest place that will actually sell it to you today.
 ## Quick start
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/diecast-dashboard.git
+git clone https://github.com/Preygle/diecast-dashboard.git
 cd diecast-dashboard
 
 pip install -r requirements.txt

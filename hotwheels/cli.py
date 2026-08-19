@@ -41,6 +41,90 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_alerts(args: argparse.Namespace) -> int:
+    """Evaluate watch rules and notify about anything that changed."""
+    from hotwheels import alerts, notify
+    from hotwheels.sources import source_labels
+
+    cfg = config.load(args.config)
+    labels = source_labels(cfg)
+
+    with db.session(cfg.database) as conn:
+        found = alerts.evaluate(conn, region=cfg.region.pincode, seed=args.seed)
+
+    if args.seed:
+        print("Seeded alert state; nothing sent.")
+        return 0
+    if not found:
+        print("No changes since the last check.")
+        return 0
+
+    text = alerts.format_message(found, lambda s: labels.get(s, s))
+    print(f"{len(found)} alert(s):")
+    for a in found:
+        money = f"Rs {a.price:,.0f}" if a.price is not None else "no price"
+        print(f"  [{a.kind}] {a.title[:52]} - {money} at {labels.get(a.source, a.source)}")
+
+    if args.dry_run:
+        print("")
+        print("--- dry run, not sent ---")
+        return 0
+
+    sent = notify.broadcast(text)
+    if not sent:
+        print("Could not send. Run `python cli.py notify status`.")
+        return 1
+    print("Sent via:", ", ".join(sent))
+    return 0
+
+
+def cmd_notify(args: argparse.Namespace) -> int:
+    """Configure and test the alert channels."""
+    from hotwheels import notify
+
+    env = notify.load_env()
+    tg, dc = notify.build(env)
+
+    if args.action == "chatid":
+        if tg is None:
+            print("No TELEGRAM_BOT_TOKEN in .env")
+            return 1
+        chat_id = tg.discover_chat_id()
+        if not chat_id:
+            print("The bot has not received any message yet.")
+            print(f"  Open https://t.me/{tg.me().get('username')} and send it /start,")
+            print("  then run this again.")
+            return 1
+        notify.set_env_value("TELEGRAM_CHAT_ID", chat_id)
+        print(f"Saved TELEGRAM_CHAT_ID={chat_id} to .env")
+        return 0
+
+    if args.action == "status":
+        print(f"Telegram: {'configured' if tg else 'missing token'}", end="")
+        if tg:
+            try:
+                print(f" (@{tg.me().get('username')}, chat_id={tg.chat_id or 'NOT SET'})")
+            except notify.NotifyError as exc:
+                print(f" - {exc}")
+        else:
+            print()
+        print(f"Discord : {'configured' if dc else 'not set'}")
+        return 0
+
+    # test
+    text = args.message or (
+        "<b>Diecast Dashboard</b> is connected." "\n\n"
+        "You will get a message here when a watched model comes back in "
+        "stock or drops below your target price."
+    )
+    sent = notify.broadcast(text, env)
+    if not sent:
+        print("Nothing sent. Run `python cli.py notify status` to see why.")
+        return 1
+    print("Sent via:", ", ".join(sent))
+    return 0
+
+
 def cmd_region(args: argparse.Namespace) -> int:
     """Show, list, or change the delivery region."""
     from hotwheels import regions
@@ -132,8 +216,13 @@ def cmd_watch(args: argparse.Namespace) -> int:
     with db.session(cfg.database) as conn:
         if args.action == "add":
             conn.execute(
-                "INSERT INTO watchlist (query, note, target_price, created_at) VALUES (?,?,?,?)",
-                (args.query, args.note, args.target, db.now()),
+                """INSERT INTO watchlist
+                       (query, note, target_price, brand, realism, series,
+                        pack_min, pack_max, sources, stock_only, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (args.query, args.note, args.target, args.brand, args.realism,
+                 args.series, args.pack_min, args.pack_max, args.sources,
+                 0 if args.include_oos else 1, db.now()),
             )
             print(f"Watching: {args.query!r}" + (f" under ₹{args.target:.0f}" if args.target else ""))
         elif args.action == "remove":
@@ -198,6 +287,18 @@ def main() -> int:
     s.add_argument("--port", type=int, default=8000)
     s.set_defaults(fn=cmd_serve)
 
+    s = sub.add_parser("alerts", help="check watch rules and send notifications")
+    s.add_argument("--seed", action="store_true",
+                   help="record current state without sending (first run)")
+    s.add_argument("--dry-run", action="store_true", help="print instead of sending")
+    s.set_defaults(fn=cmd_alerts)
+
+    s = sub.add_parser("notify", help="configure and test alert channels")
+    s.add_argument("action", nargs="?", default="status",
+                   choices=["status", "chatid", "test"])
+    s.add_argument("--message", default=None, help="custom text for `test`")
+    s.set_defaults(fn=cmd_notify)
+
     s = sub.add_parser("region", help="show or change the delivery region")
     s.add_argument("action", nargs="?", default="show", choices=["show", "list", "set"])
     s.add_argument("query", nargs="?", default=None, help="city name or 6-digit pincode")
@@ -221,6 +322,14 @@ def main() -> int:
     s.add_argument("--target", type=float, default=None, help="alert below this price")
     s.add_argument("--note", default=None)
     s.add_argument("--id", type=int, default=None)
+    s.add_argument("--brand", default=None, help="e.g. Hot Wheels, Matchbox, Majorette")
+    s.add_argument("--realism", default=None, choices=["Realistic", "Fantasy"])
+    s.add_argument("--series", default=None, help="e.g. Mainline, Premium, Track Set")
+    s.add_argument("--pack-min", type=int, default=None, dest="pack_min")
+    s.add_argument("--pack-max", type=int, default=None, dest="pack_max")
+    s.add_argument("--sources", default=None, help="comma-separated shop ids")
+    s.add_argument("--include-oos", action="store_true", dest="include_oos",
+                   help="also alert on listings that are not buyable")
     s.set_defaults(fn=cmd_watch)
 
     s = sub.add_parser("top", help="cheapest items found")

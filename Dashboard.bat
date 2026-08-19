@@ -6,7 +6,7 @@ REM Always run from the folder this file lives in, so double-clicking works
 REM regardless of where Explorer thinks the working directory is.
 cd /d "%~dp0"
 
-set "PORT=8000"
+set "PORT=8005"
 if not "%~1"=="" set "PORT=%~1"
 
 REM ---- locate Python -------------------------------------------------------

@@ -42,8 +42,8 @@ dependencies = [
 dev = ["ruff>=0.6"]
 
 [project.urls]
-Homepage = "https://github.com/YOUR_USERNAME/diecast-dashboard"
-Issues = "https://github.com/YOUR_USERNAME/diecast-dashboard/issues"
+Homepage = "https://github.com/Preygle/diecast-dashboard"
+Issues = "https://github.com/Preygle/diecast-dashboard/issues"
 
 [project.scripts]
 diecast = "hotwheels.cli:main"

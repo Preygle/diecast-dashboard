@@ -75,6 +75,29 @@ CREATE TABLE IF NOT EXISTS watchlist (
     created_at   TEXT NOT NULL
 );
 
+-- What each watch rule has already been told about, so a scheduled run only
+-- reports transitions (came back in stock, dropped below target) instead of
+-- re-sending the entire matching catalogue every time it fires.
+CREATE TABLE IF NOT EXISTS alert_state (
+    id         INTEGER PRIMARY KEY,
+    watch_id   INTEGER NOT NULL REFERENCES watchlist(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL,
+    source     TEXT NOT NULL,
+    in_stock   INTEGER NOT NULL DEFAULT 0,
+    price      REAL,
+    notified_at TEXT NOT NULL,
+    UNIQUE(watch_id, product_id, source)
+);
+
+CREATE INDEX IF NOT EXISTS idx_alert_watch ON alert_state(watch_id);
+
+-- Cursor for Telegram getUpdates, so commands sent between runs are processed
+-- exactly once without needing a always-on webhook listener.
+CREATE TABLE IF NOT EXISTS bot_state (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
+
 CREATE TABLE IF NOT EXISTS scrape_runs (
     id          INTEGER PRIMARY KEY,
     source      TEXT NOT NULL,
@@ -98,6 +121,14 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("products", "brand", "ALTER TABLE products ADD COLUMN brand TEXT"),
     ("listings", "brand_hint", "ALTER TABLE listings ADD COLUMN brand_hint TEXT"),
     ("products", "realism", "ALTER TABLE products ADD COLUMN realism TEXT"),
+    # Watch rules grew from "a text query" into real filters.
+    ("watchlist", "brand", "ALTER TABLE watchlist ADD COLUMN brand TEXT"),
+    ("watchlist", "realism", "ALTER TABLE watchlist ADD COLUMN realism TEXT"),
+    ("watchlist", "series", "ALTER TABLE watchlist ADD COLUMN series TEXT"),
+    ("watchlist", "pack_min", "ALTER TABLE watchlist ADD COLUMN pack_min INTEGER"),
+    ("watchlist", "pack_max", "ALTER TABLE watchlist ADD COLUMN pack_max INTEGER"),
+    ("watchlist", "sources", "ALTER TABLE watchlist ADD COLUMN sources TEXT"),
+    ("watchlist", "stock_only", "ALTER TABLE watchlist ADD COLUMN stock_only INTEGER DEFAULT 1"),
 ]
 
 # Indexes on migrated columns live here, not in SCHEMA. SCHEMA runs first, and
@@ -334,5 +365,23 @@ def finish_run(
     conn.execute(
         "UPDATE scrape_runs SET finished_at=?, ok=?, items=?, error=? WHERE id=?",
         (now(), int(ok), items, error, run_id),
+    )
+    conn.commit()
+
+
+# --------------------------------------------------------------------------
+# bot state (small key/value scratchpad)
+# --------------------------------------------------------------------------
+
+def get_state(conn: sqlite3.Connection, key: str, default: str | None = None) -> str | None:
+    row = conn.execute("SELECT value FROM bot_state WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_state(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        """INSERT INTO bot_state (key, value) VALUES (?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
+        (key, value),
     )
     conn.commit()

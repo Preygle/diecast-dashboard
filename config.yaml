@@ -50,17 +50,17 @@ queries:
 
 sources:
   amazon_in:
-    enabled: true
+    enabled: false
     max_pages: 3
   flipkart:
-    enabled: true
+    enabled: false
     max_pages: 3
   blinkit:
     enabled: true
   instamart:
-    enabled: true
+    enabled: false
   zepto:
-    enabled: true
+    enabled: false
 
   # Specialty and general shops running on Shopify. Every Shopify store exposes
   # /products.json and /search/suggest.json, so one adapter serves them all and
@@ -78,60 +78,76 @@ sources:
       - name: kinderlogs
         label: "Kinder Logs"
         domain: kinderlogs.in
+        enabled: false
       - name: itsfun
         label: "ItsFun"
         domain: itsfun.in
+        enabled: false
       - name: zoomsters
         label: "Zoomsters"
         domain: zoomsters.in
+        enabled: false
       - name: blueballoon
         label: "Blue Balloon Toys"
         domain: blueballoontoys.com
+        enabled: true
       - name: giftgalaxy
         label: "Gift Galaxy"
         domain: giftgalaxy.in
+        enabled: false
       - name: peppystore
         label: "The Peppy Store"
         domain: thepeppystore.in
+        enabled: false
       - name: toycollectors
         label: "Toy Collectors India"
         domain: toycollectorsindia.com
+        enabled: false
       - name: kidsinfy
         label: "Kidsinfy"
         domain: kidsinfy.in
+        enabled: false
       # General toy retailers: their catalogues are mostly not diecast, so
       # search a few terms rather than paging thousands of unrelated products.
       - name: funcorp
         label: "FunCorp"
         domain: funcorp.in
+        enabled: true
         mode: search
       - name: toysindia
         label: "Toys India"
         domain: toys-india.com
+        enabled: false
         mode: search
       - name: toycra
         label: "Toycra"
         domain: toycra.com
+        enabled: false
         mode: search
       - name: krazycaterpillar
         label: "Krazy Caterpillar"
         domain: krazycaterpillar.com
+        enabled: false
         mode: search
       - name: toymarche
         label: "Toymarche"
         domain: toymarche.com
+        enabled: true
         mode: search
       - name: jaimantoys
         label: "Jaiman Toys"
         domain: jaimantoys.com
+        enabled: false
         mode: search
       - name: crossword
         label: "Crossword"
         domain: crossword.in
+        enabled: true
         mode: search          # a bookshop; searching beats paging the catalogue
       - name: bigsmall
         label: "Bigsmall"
         domain: bigsmall.in
+        enabled: false
         mode: search
 
   # WooCommerce shops expose a public Store API at /wp-json/wc/store/v1.
@@ -142,12 +158,15 @@ sources:
       - name: planetsuperheroes
         label: "Planet Superheroes"
         domain: planetsuperheroes.com
+        enabled: false
       - name: thetoysindia
         label: "The Toys India"
         domain: thetoysindia.com
+        enabled: false
       - name: gbuy
         label: "Gbuy"
         domain: gbuy.in
+        enabled: false
 
 # Stores with no public product API - they run custom platforms, so the generic
 # Shopify/WooCommerce adapters cannot reach them. Each needs a bespoke HTML
