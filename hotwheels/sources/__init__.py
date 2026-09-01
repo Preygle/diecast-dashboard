@@ -13,6 +13,7 @@ from typing import Any
 from ..config import Config
 from .amazon_in import AmazonIN
 from .base import Item, Source
+from .firstcry import FirstCry
 from .flipkart import Flipkart
 from .quickcom import Blinkit, Instamart, Zepto
 from .shopify import ShopifyStore
@@ -22,6 +23,7 @@ from .woocommerce import WooStore
 REGISTRY: dict[str, type[Source]] = {
     AmazonIN.name: AmazonIN,
     Flipkart.name: Flipkart,
+    FirstCry.name: FirstCry,
     Blinkit.name: Blinkit,
     Instamart.name: Instamart,
     Zepto.name: Zepto,
@@ -89,6 +91,6 @@ def source_labels(cfg: Config) -> dict[str, str]:
 __all__ = [
     "Item", "Source", "REGISTRY", "BROWSER_SOURCES", "PLATFORMS",
     "build_sources", "source_labels", "store_definitions",
-    "AmazonIN", "Flipkart", "Blinkit", "Instamart", "Zepto",
+    "AmazonIN", "Flipkart", "FirstCry", "Blinkit", "Instamart", "Zepto",
     "ShopifyStore", "WooStore",
 ]

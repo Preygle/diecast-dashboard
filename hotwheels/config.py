@@ -25,8 +25,10 @@ class Region:
 @dataclass
 class Config:
     region: Region
-    max_price: float
+    # None means no ceiling: every price is kept, however dear.
+    max_price: float | None
     currency: str
+    exclude_fantasy: bool
     queries: list[str]
     sources: dict[str, dict[str, Any]]
     delay: float
@@ -64,8 +66,10 @@ def load(path: str | os.PathLike[str] | None = None) -> Config:
             lat=float(r["lat"]),
             lon=float(r["lon"]),
         ),
-        max_price=float(data.get("max_price", 2000)),
+        # `max_price: null` (or 0, or absent) removes the ceiling entirely.
+        max_price=(float(raw_cap) if (raw_cap := data.get("max_price")) else None),
         currency=data.get("currency", "INR"),
+        exclude_fantasy=bool(data.get("exclude_fantasy", False)),
         queries=list(data.get("queries", ["hot wheels"])),
         sources=data.get("sources", {}),
         delay=float(scrape.get("delay", 1.5)),

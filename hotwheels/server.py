@@ -9,9 +9,16 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, db, queries, regions, sources
+from . import bot, config, db, queries, regions, sources
 
 WEB = Path(__file__).resolve().parent.parent / "web"
+
+
+def _ceiling(asked: float | None, configured: float | None) -> float | None:
+    """The tighter of what the UI asked for and what config allows."""
+    if asked is None:
+        return configured
+    return asked if configured is None else min(asked, configured)
 
 
 def create_app(config_path: str | None = None) -> FastAPI:
@@ -119,8 +126,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 c, q=q, sources=source, brands=brand, packs=pack,
                 price_band=price_band, series=series, realism=realism,
                 min_price=min_price,
-                # Never allow the UI to request above the configured ceiling.
-                max_price=min(max_price, cfg_now().max_price) if max_price else cfg_now().max_price,
+                # Clamp to the configured ceiling when there is one; with
+                # `max_price: null` the dashboard's own filter is the only limit.
+                max_price=_ceiling(max_price, cfg_now().max_price),
                 in_stock_only=in_stock, oos_only=oos_only, sets_only=sets_only,
                 region=cfg_now().region.pincode,
                 sort=sort, limit=min(limit, 200), offset=max(offset, 0),
@@ -178,6 +186,61 @@ def create_app(config_path: str | None = None) -> FastAPI:
             c.execute("UPDATE watchlist SET active = 0 WHERE id = ?", (watch_id,))
             c.commit()
             return {"ok": True}
+        finally:
+            c.close()
+
+    @app.get("/api/bot")
+    def bot_settings() -> dict[str, Any]:
+        """Everything the Bot tab needs: command toggles and the mute list."""
+        c = conn()
+        try:
+            return {
+                "commands": bot.command_table(c),
+                "muted_sources": sorted(bot.muted_sources(c)),
+                "paused_until": db.get_state(c, bot.PAUSED_UNTIL) or None,
+                "paused": bot.is_paused(c),
+            }
+        finally:
+            c.close()
+
+    @app.post("/api/bot/commands/{name}")
+    def toggle_command(name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if name not in bot.REGISTRY:
+            raise HTTPException(404, f"no such command: {name}")
+        if bot.REGISTRY[name].always_on:
+            raise HTTPException(400, f"/{name} cannot be switched off")
+        c = conn()
+        try:
+            bot.set_enabled(c, name, bool(payload.get("enabled")))
+            return {"name": name, "enabled": bot.enabled(c, name)}
+        finally:
+            c.close()
+
+    @app.post("/api/bot/filter")
+    def set_filter(payload: dict[str, Any]) -> dict[str, Any]:
+        """Replace the muted-shop list wholesale."""
+        names = payload.get("muted_sources")
+        if not isinstance(names, list):
+            raise HTTPException(400, "muted_sources must be a list")
+        known = {s.name for s in sources.build_sources(cfg_now())}
+        unknown = [n for n in names if n not in known]
+        if unknown:
+            raise HTTPException(400, f"unknown shop(s): {', '.join(unknown)}")
+        c = conn()
+        try:
+            bot.set_muted_sources(c, [str(n) for n in names])
+            return {"muted_sources": sorted(bot.muted_sources(c))}
+        finally:
+            c.close()
+
+    @app.post("/api/bot/pause")
+    def set_pause(payload: dict[str, Any]) -> dict[str, Any]:
+        hours = payload.get("hours")
+        c = conn()
+        try:
+            bot.set_paused(c, float(hours) if hours else None)
+            return {"paused": bot.is_paused(c),
+                    "paused_until": db.get_state(c, bot.PAUSED_UNTIL) or None}
         finally:
             c.close()
 

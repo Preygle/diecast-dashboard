@@ -261,7 +261,7 @@ def upsert_product(
                       title     = CASE WHEN length(?) > length(title) THEN ? ELSE title END,
                       brand     = COALESCE(brand, ?),
                       series    = COALESCE(series, ?),
-                      realism   = COALESCE(?, realism),
+                      realism   = COALESCE(realism, ?),
                       image_url = COALESCE(image_url, ?)
                 WHERE id = ?""",
             (ts, title, title, brand, series, realism, image_url, pid),

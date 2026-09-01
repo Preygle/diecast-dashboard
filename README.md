@@ -24,7 +24,7 @@ them will tell you what the others charge:
 
 | | Examples | Why it matters |
 |---|---|---|
-| **Marketplaces** | Amazon.in, Flipkart | Widest range, wildly variable pricing |
+| **Marketplaces** | Amazon.in, Flipkart, FirstCry | Widest range, wildly variable pricing |
 | **Quick-commerce** | Blinkit, Instamart, Zepto | 10-minute delivery, but priced **per delivery area** |
 | **Specialty shops** | Kinder Logs, ItsFun, Toy Collectors India, +14 more | Where the rare castings actually are |
 
@@ -112,6 +112,9 @@ python cli.py regroup                      # re-derive grouping, no re-scrape
 python cli.py top --limit 20               # cheapest finds in the terminal
 python cli.py stats                        # per-shop summary
 python cli.py watch add "treasure hunt" --target 500
+python cli.py alerts                       # send anything that changed
+python cli.py bot poll                     # answer /commands sent to the bot
+python cli.py bot commands --on pause      # enable a bot command
 ```
 
 `regroup` exists because grouping rules change more often than prices do. After
@@ -173,8 +176,23 @@ shopify:
 ```
 
 **Not reachable this way** — custom platforms with no public product JSON, each
-needing a bespoke HTML adapter: **Karz and Dolls**, **Toyworld Jaipur**,
-**FirstCry**, **Hamleys India**, **DieCast India**.
+needing a bespoke adapter: **Karz and Dolls**, **Toyworld Jaipur**,
+**Hamleys India**, **DieCast India**.
+
+**FirstCry** is the one that got a bespoke adapter. It runs a custom ASP.NET
+storefront, but its listing pages page through a JSON service that answers
+plain HTTP requests:
+
+```
+/svcs/ProductFilter.svc/GetSubcategoryWisePagingProducts?CatId=5&BrandId=113
+```
+
+The service is addressable only by category and brand id — its search sibling
+ignores `SearchString` and returns the entire 479k-product catalogue — so the
+adapter resolves each query against `/search?q=`, which redirects to the brand
+page whose hidden inputs carry the ids. Queries that land on a brand get the
+full catalogue through the service; the rest fall back to the 20 cards the
+search page renders server-side.
 
 ---
 
@@ -232,6 +250,50 @@ Detection matches ~90 real marques and ~180 real models, because titles often
 give only the model ("Corvette") with no manufacturer. Word boundaries matter:
 "Rodger **Dodger**" must not match *Dodge*, and "**Jeep**ster Commando" is a
 real Jeep a naive match would miss.
+
+With `exclude_fantasy: true` this stops being only a label and becomes a gate:
+fantasy castings are dropped at store time rather than kept and filtered later.
+**Mixed** is never dropped — a 5-pack has no single answer, so multipacks and
+track sets always survive. The gate lives in the pipeline, not in each adapter,
+so one flag governs every shop and `regroup` re-applies it to everything
+already on disk.
+
+---
+
+## The Telegram bot
+
+Alerts push; the bot also answers. Commands arrive through `getUpdates` rather
+than a webhook, because there is no always-on listener here — `cli.py bot poll`
+runs in the same scheduled cycle as the scraper, so a command is answered a few
+minutes after it is sent.
+
+Seven commands ship enabled:
+
+| | |
+|---|---|
+| `/help` | what the bot can do (cannot be switched off) |
+| `/status` | pipeline health and per-shop counts |
+| `/filter [off\|on\|reset] [shop…]` | mute or unmute shops |
+| `/find <text>` | search the catalogue |
+| `/deals` | biggest price gaps between shops |
+| `/watch` | your watch rules and what they match |
+| `/stock` | what is out of stock, per shop |
+
+Seven more ship **off** — `/pause`, `/resume`, `/top`, `/stats`, `/region`,
+`/history`, `/commands` — and are switched on from the dashboard's **Bot** tab,
+or with `/commands on pause` once that one is enabled.
+
+A disabled command is not merely refused: it is left out of `/help` and out of
+the menu Telegram shows, so the bot never advertises something it will not do.
+Toggling one re-pushes that menu.
+
+### Muting
+
+`/filter off blinkit` stops Blinkit alerts. The shop is still scraped and still
+appears in the dashboard — only the messaging stops. Muting is applied *after*
+evaluation, never before, because alert state has to keep advancing while a
+shop is quiet; otherwise unmuting would dump every change that happened in the
+meantime. The same holds for `/pause`: you get the next change, not the backlog.
 
 ---
 
@@ -295,6 +357,9 @@ why `regroup` can rebuild grouping offline without re-scraping.
 python tests/test_normalize.py   # brands, 1:64 gate, packs, realism, matching
 python tests/test_regroup.py     # regroup must never destroy listings
 python tests/test_stock.py       # out-of-stock + nullable-price migration
+python tests/test_alerts.py      # transitions, seeding, HTML escaping
+python tests/test_firstcry.py    # both FirstCry shapes: service JSON and cards
+python tests/test_bot.py         # command toggles, muting, the keep policy
 ```
 
 No Playwright browsers needed — the suite is pure logic. CI runs it on Python
@@ -311,7 +376,8 @@ region:            # use `cli.py region set`, not hand edits
   pincode: "600127"
   lat: 12.8406
   lon: 80.1534
-max_price: 2000    # enforced at parse time — dearer items are never stored
+max_price: null    # a ceiling enforced at parse time; null means no ceiling
+exclude_fantasy: true   # mainlines only — drop in-house castings
 queries: [...]     # search terms fanned out to every shop
 scrape:
   match_threshold: 87   # raise to split more, lower to merge more

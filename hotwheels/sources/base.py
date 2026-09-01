@@ -120,7 +120,9 @@ class Source:
         await asyncio.sleep(self.cfg.delay + random.uniform(0, 0.7))
 
     def within_cap(self, price: float | None) -> bool:
-        return price is not None and 0 < price <= self.max_price
+        if price is None or price <= 0:
+            return False
+        return self.max_price is None or price <= self.max_price
 
     def keep(self, price: float | None) -> bool:
         """Whether to store a listing.
