@@ -7,7 +7,9 @@ Three things here are easy to get subtly wrong and expensive to notice:
   * muting must suppress *delivery* only. If it filtered before evaluation,
     alert state would stop advancing and unmuting would dump every change
     that happened while the shop was quiet;
-  * the fantasy filter must not eat multipacks, which have no realism at all.
+  * the fantasy filter must not eat multipacks, which have no realism at all;
+  * a photo is a nicety and a missed restock is not, so every failure in the
+    picture path must still deliver the text digest.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from hotwheels import bot, config, db, normalize  # noqa: E402
+from hotwheels import bot, config, db, normalize, notify  # noqa: E402
 
 
 def check(label: str, got, want) -> bool:
@@ -31,6 +33,41 @@ def check(label: str, got, want) -> bool:
 @dataclass
 class FakeAlert:
     source: str
+    image_url: str | None = None
+    kind: str = "new"
+    title: str = "Some Casting"
+    price: float | None = 199.0
+    url: str | None = "https://example.com/p"
+    previous_price: float | None = None
+
+
+class FakeTelegram:
+    """Records what would have been sent, and can be told to fail."""
+
+    def __init__(self, fail: str | None = None) -> None:
+        self.calls: list[tuple[str, object]] = []
+        self.fail = fail
+
+    def send(self, text, **kw):
+        self.calls.append(("text", len(text)))
+
+    def send_photo(self, url, caption):
+        if self.fail == "photo":
+            raise notify.NotifyError("simulated")
+        self.calls.append(("photo", url))
+
+    def send_album(self, items):
+        if self.fail == "album":
+            raise notify.NotifyError("simulated")
+        if not 2 <= len(items) <= 10:
+            raise notify.NotifyError(f"bad album size {len(items)}")
+        self.calls.append(("album", len(items)))
+
+
+def pics(n: int, with_image: bool = True) -> list[FakeAlert]:
+    return [FakeAlert("firstcry",
+                      "https://cdn.shopify.com/x.jpg" if with_image else None)
+            for _ in range(n)]
 
 
 LABELS = {"firstcry": "FirstCry", "blinkit": "Blinkit", "crossword": "Crossword"}
@@ -45,7 +82,7 @@ def main() -> int:
         print("defaults")
         table = bot.command_table(conn)
         on = [c["name"] for c in table if c["enabled"]]
-        ok &= check("seven commands ship enabled", len(on), 7)
+        ok &= check("eight commands ship enabled", len(on), 8)
         ok &= check("/help is one of them", "help" in on, True)
         ok &= check("/pause ships off", bot.enabled(conn, "pause"), False)
         ok &= check("menu advertises only enabled ones",
@@ -101,6 +138,48 @@ def main() -> int:
         bot.set_paused(conn, None)
         kept, held = bot.suppress(conn, batch)
         ok &= check("resume releases", (len(kept), held), (2, None))
+
+    print("thumbnails")
+    ok &= check("shopify gets a width parameter",
+                notify.thumb_url("https://cdn.shopify.com/s/f/a.jpg?v=1"),
+                "https://cdn.shopify.com/s/f/a.jpg?v=1&width=320")
+    ok &= check("blinkit gets a cloudflare resize prefix",
+                notify.thumb_url("https://cdn.grofers.com/da/p.png"),
+                "https://cdn.grofers.com/cdn-cgi/image/f=auto,w=320,q=60/da/p.png")
+    ok &= check("firstcry is normalised to a small variant",
+                notify.thumb_url(
+                    "https://cdn.fcglcdn.com/brainbees/images/products/900x900/1a.jpg"),
+                "https://cdn.fcglcdn.com/brainbees/images/products/219x265/1a.jpg")
+    ok &= check("an unknown host is passed through untouched",
+                notify.thumb_url("https://example.com/x.jpg"),
+                "https://example.com/x.jpg")
+    ok &= check("no image stays no image", notify.thumb_url(None), None)
+
+    print("photo delivery")
+    shapes = [
+        ("one photo, no text needed", pics(1), [("photo",)]),
+        ("a small batch is one album", pics(4), [("album",)]),
+        ("a big batch keeps the text digest", pics(12), [("text",), ("album",)]),
+        ("no images at all is text only", pics(3, False), [("text",)]),
+        ("a mixed batch keeps the text digest",
+         pics(2) + pics(2, False), [("text",), ("album",)]),
+    ]
+    for why, batch, want in shapes:
+        tg = FakeTelegram()
+        bot.send_with_photos(tg, batch, "digest", None)
+        ok &= check(why, [(c[0],) for c in tg.calls], want)
+
+    ok &= check("a 12-photo batch still sends a legal album of 10",
+                next(c[1] for c in
+                     (lambda t: (bot.send_with_photos(t, pics(12), "d", None), t.calls)[1])
+                     (FakeTelegram()) if c[0] == "album"), 10)
+
+    print("photo failure never loses the alert")
+    for mode in ("album", "photo"):
+        tg = FakeTelegram(fail=mode)
+        sent = bot.send_with_photos(tg, pics(4 if mode == "album" else 1), "digest", None)
+        ok &= check(f"{mode} failure falls back to text",
+                    ([c[0] for c in tg.calls], sent), (["text"], ["telegram"]))
 
     print("keep policy")
     cases = [

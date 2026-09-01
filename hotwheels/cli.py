@@ -59,6 +59,7 @@ def cmd_alerts(args: argparse.Namespace) -> int:
         # advancing while a shop is quiet, or unmuting would dump every change
         # that happened in the meantime.
         found, held = bot.suppress(conn, found)
+        photos = bot.photos_on(conn)
 
     if args.seed:
         print("Seeded alert state; nothing sent.")
@@ -81,7 +82,20 @@ def cmd_alerts(args: argparse.Namespace) -> int:
         print("--- dry run, not sent ---")
         return 0
 
-    sent = notify.broadcast(text)
+    # Photos go through the Telegram client directly, because an album is not
+    # something `broadcast` can express. Discord still gets the text digest.
+    tg, dc = notify.build()
+    if tg is not None and photos:
+        sent = bot.send_with_photos(tg, found, text, lambda s: labels.get(s, s))
+        if dc is not None:
+            try:
+                dc.send(text)
+                sent.append("discord")
+            except notify.NotifyError as exc:
+                print(f"  discord failed: {exc}")
+    else:
+        sent = notify.broadcast(text)
+
     if not sent:
         print("Could not send. Run `python cli.py notify status`.")
         return 1

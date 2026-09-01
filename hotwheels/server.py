@@ -199,6 +199,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 "muted_sources": sorted(bot.muted_sources(c)),
                 "paused_until": db.get_state(c, bot.PAUSED_UNTIL) or None,
                 "paused": bot.is_paused(c),
+                "photos": bot.photos_on(c),
             }
         finally:
             c.close()
@@ -230,6 +231,15 @@ def create_app(config_path: str | None = None) -> FastAPI:
         try:
             bot.set_muted_sources(c, [str(n) for n in names])
             return {"muted_sources": sorted(bot.muted_sources(c))}
+        finally:
+            c.close()
+
+    @app.post("/api/bot/photos")
+    def set_photos(payload: dict[str, Any]) -> dict[str, Any]:
+        c = conn()
+        try:
+            bot.set_photos(c, bool(payload.get("enabled")))
+            return {"photos": bot.photos_on(c)}
         finally:
             c.close()
 

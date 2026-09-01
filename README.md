@@ -267,7 +267,7 @@ than a webhook, because there is no always-on listener here — `cli.py bot poll
 runs in the same scheduled cycle as the scraper, so a command is answered a few
 minutes after it is sent.
 
-Seven commands ship enabled:
+Eight commands ship enabled:
 
 | | |
 |---|---|
@@ -278,6 +278,7 @@ Seven commands ship enabled:
 | `/deals` | biggest price gaps between shops |
 | `/watch` | your watch rules and what they match |
 | `/stock` | what is out of stock, per shop |
+| `/photos [on\|off]` | product photos in alerts |
 
 Seven more ship **off** — `/pause`, `/resume`, `/top`, `/stats`, `/region`,
 `/history`, `/commands` — and are switched on from the dashboard's **Bot** tab,
@@ -286,6 +287,30 @@ or with `/commands on pause` once that one is enabled.
 A disabled command is not merely refused: it is left out of `/help` and out of
 the menu Telegram shows, so the bot never advertises something it will not do.
 Toggling one re-pushes that menu.
+
+### Photos
+
+A title like *"Hot Wheels HW Torque Free Wheel Die Cast"* identifies nothing —
+the picture is what tells you which casting it is. Alerts carry one, taken from
+the listing rather than the product, so you see the shop's own photo.
+
+| Batch | What arrives |
+|---|---|
+| 1 with a photo | one captioned picture |
+| 2–10 with photos | one album, each captioned |
+| more than 10 | the full text digest, plus an album of the first 10 |
+
+Captions carry the price, the shop and the link, so a batch that fits in one
+album needs no text message at all.
+
+Images are requested at 320px where the CDN can resize from the URL — Shopify
+via `&width=`, Blinkit via Cloudflare's `/cdn-cgi/image/`, FirstCry via its
+size path segment. That is 632KB → 24KB for a Blinkit photo. Telegram
+re-compresses anyway, so the gain is that it fetches fast and never meets its
+10MB limit on a source image.
+
+Any failure in the picture path falls back to the text digest: a photo is a
+nicety, a missed restock is not. `/photos off` (or the Bot tab) for text only.
 
 ### Muting
 

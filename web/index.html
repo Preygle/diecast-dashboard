@@ -936,6 +936,17 @@ async function loadBot() {
     loadBot();
   };
   top.appendChild(pauseBtn);
+
+  const photoBtn = el("button", "ghost");
+  photoBtn.textContent = data.photos ? "Photos: on" : "Photos: off";
+  photoBtn.title = "Product photos in alerts. Titles alone rarely identify a casting.";
+  photoBtn.style.marginLeft = "8px";
+  photoBtn.onclick = async () => {
+    await fetch("/api/bot/photos", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({enabled: !data.photos})});
+    loadBot();
+  };
+  top.appendChild(photoBtn);
   wrap.appendChild(top);
 
   /* -- commands ---------------------------------------------------------- */

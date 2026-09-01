@@ -46,6 +46,7 @@ class Alert:
     in_stock: bool
     target_price: float | None = None
     previous_price: float | None = None
+    image_url: str | None = None
 
     def line(self, label: Any = None) -> str:
         shop = label(self.source) if callable(label) else self.source
@@ -110,7 +111,8 @@ def matches(conn: sqlite3.Connection, watch: dict[str, Any],
     # Ordered so the best offer for each (product, shop) comes first: in stock
     # before sold out, then cheapest.
     sql = f"""
-        SELECT p.id AS product_id, p.title, p.image_url,
+        SELECT p.id AS product_id, p.title,
+               COALESCE(l.image_url, p.image_url) AS image_url,
                l.source, l.price, l.in_stock, l.url
           FROM products p JOIN listings l ON l.product_id = p.id
          WHERE {' AND '.join(where)}
@@ -187,6 +189,7 @@ def evaluate(conn: sqlite3.Connection, *, region: str | None = None,
                         price=m["price"], url=m["url"], in_stock=bool(m["in_stock"]),
                         target_price=target,
                         previous_price=was["price"] if was else None,
+                        image_url=m.get("image_url"),
                     ))
 
             _remember(conn, watch["id"], m)
