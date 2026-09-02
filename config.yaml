@@ -10,14 +10,31 @@ region:
   lat: 12.8406
   lon: 80.1534
 
-# Hard ceiling. Anything above this is discarded at parse time, never stored.
-max_price: 2000
+# Hard ceiling, applied at parse time. `null` means no ceiling: every price is
+# kept, however dear, and filtering by price becomes purely a dashboard choice.
+max_price: null
 currency: "INR"
+
+# Mainlines only. A casting with no real-world marque or model behind it is
+# fantasy (Twin Mill, Bone Shaker, and every no-name shape); those are dropped
+# rather than stored. Multipacks and track sets are never judged either way -
+# a 5-pack mixes both kinds - so they are always kept.
+exclude_fantasy: true
+
+# How far above its class an item may be priced and still be worth alerting
+# about. A shop's stated MRP is useless here - 372 of 374 listings sit at or
+# under their own, because shops set MRP to whatever they charge - so the
+# baseline is the median price of everything sharing a (brand, series, pack
+# size). Hot Wheels mainline singles cluster on Rs 179, so 0.25 alerts up to
+# about Rs 224 and rejects Rs 358. Set to null to alert at any price.
+max_markup: 0.25
 
 # Search terms fanned out to every enabled source. The scrapers only find what
 # they search for, so every tracked brand needs its own terms. Results are
 # filtered again on arrival: brand must be recognised AND the scale must be
 # 1:64-class, so a Maisto 1:24 hit here is discarded before it is stored.
+# The full sweep. Thorough, and slow enough that it is not what you poll for a
+# restock - see `fast_queries`.
 queries:
   # Hot Wheels
   - "hot wheels"
@@ -48,6 +65,29 @@ queries:
   - "diecast car set 1:64"
   - "1:64 diecast track set"
 
+# The subset polled on the fast cycle. A restock reaches you at the speed of
+# this list, so it holds only the brands actually watched - the long tail of
+# collector marques is found by the full sweep a few times an hour.
+fast_queries:
+  - "hot wheels"
+  - "matchbox"
+  - "majorette"
+
+# Shops polled on the fast cycle: the ones that actually stock mainlines at or
+# near MRP, so a restock there is something you would buy. The rest are found
+# by the full sweep. Leave empty to poll every enabled shop.
+fast_sources:
+  - firstcry
+  - toymarche
+  - funcorp
+  - kinderlogs
+  - krazycaterpillar
+  - giftgalaxy
+  - itsfun
+  - zoomsters
+  - blueballoon
+  - crossword
+
 sources:
   amazon_in:
     enabled: false
@@ -55,6 +95,10 @@ sources:
   flipkart:
     enabled: false
     max_pages: 3
+  firstcry:
+    enabled: true
+    # 20 products per page; Hot Wheels alone is ~290, so 15 covers it.
+    max_pages: 15
   blinkit:
     enabled: true
   instamart:
@@ -78,15 +122,15 @@ sources:
       - name: kinderlogs
         label: "Kinder Logs"
         domain: kinderlogs.in
-        enabled: false
+        enabled: true
       - name: itsfun
         label: "ItsFun"
         domain: itsfun.in
-        enabled: false
+        enabled: true
       - name: zoomsters
         label: "Zoomsters"
         domain: zoomsters.in
-        enabled: false
+        enabled: true
       - name: blueballoon
         label: "Blue Balloon Toys"
         domain: blueballoontoys.com
@@ -94,19 +138,19 @@ sources:
       - name: giftgalaxy
         label: "Gift Galaxy"
         domain: giftgalaxy.in
-        enabled: false
+        enabled: true
       - name: peppystore
         label: "The Peppy Store"
         domain: thepeppystore.in
-        enabled: false
+        enabled: true
       - name: toycollectors
         label: "Toy Collectors India"
         domain: toycollectorsindia.com
-        enabled: false
+        enabled: false          # dead: SSL certificate verify failed
       - name: kidsinfy
         label: "Kidsinfy"
         domain: kidsinfy.in
-        enabled: false
+        enabled: true
       # General toy retailers: their catalogues are mostly not diecast, so
       # search a few terms rather than paging thousands of unrelated products.
       - name: funcorp
@@ -117,17 +161,17 @@ sources:
       - name: toysindia
         label: "Toys India"
         domain: toys-india.com
-        enabled: false
+        enabled: true
         mode: search
       - name: toycra
         label: "Toycra"
         domain: toycra.com
-        enabled: false
+        enabled: true
         mode: search
       - name: krazycaterpillar
         label: "Krazy Caterpillar"
         domain: krazycaterpillar.com
-        enabled: false
+        enabled: true
         mode: search
       - name: toymarche
         label: "Toymarche"
@@ -137,7 +181,7 @@ sources:
       - name: jaimantoys
         label: "Jaiman Toys"
         domain: jaimantoys.com
-        enabled: false
+        enabled: true
         mode: search
       - name: crossword
         label: "Crossword"
@@ -147,7 +191,7 @@ sources:
       - name: bigsmall
         label: "Bigsmall"
         domain: bigsmall.in
-        enabled: false
+        enabled: true
         mode: search
 
   # WooCommerce shops expose a public Store API at /wp-json/wc/store/v1.
@@ -158,15 +202,15 @@ sources:
       - name: planetsuperheroes
         label: "Planet Superheroes"
         domain: planetsuperheroes.com
-        enabled: false
+        enabled: false          # answers, but stocks no diecast
       - name: thetoysindia
         label: "The Toys India"
         domain: thetoysindia.com
-        enabled: false
+        enabled: false          # dead: no DNS
       - name: gbuy
         label: "Gbuy"
         domain: gbuy.in
-        enabled: false
+        enabled: true
 
 # Stores with no public product API - they run custom platforms, so the generic
 # Shopify/WooCommerce adapters cannot reach them. Each needs a bespoke HTML
@@ -175,8 +219,10 @@ sources:
 #   toyworldjaipur.in    custom, no recognisable platform
 
 scrape:
-  # Polite delay between page fetches, seconds.
-  delay: 1.5
+  # Polite delay between page fetches, seconds. These are mostly JSON API
+  # calls, not HTML scraping, and shops run concurrently - so this is the
+  # single biggest lever on how quickly a restock reaches you.
+  delay: 0.5
   timeout: 30
   # Fuzzy-match threshold (0-100) for grouping listings into one product.
   match_threshold: 87

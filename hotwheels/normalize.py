@@ -510,6 +510,23 @@ def is_target_diecast(title: str, hint: str | None = None) -> bool:
     return BRANDS[brand][1]
 
 
+def is_wanted(title: str, hint: str | None = None, *,
+              exclude_fantasy: bool = False) -> bool:
+    """The full keep/drop decision for one listing.
+
+    `is_target_diecast` answers "is this the right brand at the right scale".
+    This adds the taste question on top: with `exclude_fantasy` set, a casting
+    with no real-world car behind it is dropped. Multipacks and track sets are
+    never judged - `detect_realism` returns None for them, because a 5-pack
+    mixes both kinds - so they survive either way.
+    """
+    if not is_target_diecast(title, hint):
+        return False
+    if exclude_fantasy and detect_realism(title) == FANTASY:
+        return False
+    return True
+
+
 def looks_like_hotwheels(title: str) -> bool:
     """Back-compat alias used by the tests; brand-agnostic now."""
     return is_target_diecast(title)

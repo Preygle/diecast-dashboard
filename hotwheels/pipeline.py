@@ -66,6 +66,13 @@ def _store(conn: sqlite3.Connection, cfg: Config, items: list[Item]) -> tuple[in
     stored = 0
     changes = 0
 
+    # The taste filter is applied here rather than in each adapter, so one
+    # config flag governs every shop and a re-run of `regroup` applies the
+    # same rule to everything already on disk.
+    items = [i for i in items
+             if normalize.is_wanted(i.raw_title, i.brand_hint,
+                                    exclude_fantasy=cfg.exclude_fantasy)]
+
     # Longest titles first: they carry the most tokens, which makes them better
     # anchors for the fuzzy matcher than a terse quick-commerce name.
     for item in sorted(items, key=lambda i: len(i.raw_title), reverse=True):
@@ -112,11 +119,18 @@ def regroup(cfg: Config) -> tuple[int, int]:
         # current filter here so regroup also cleans.
         stale = [
             r["id"] for r in conn.execute("SELECT id, raw_title, brand_hint FROM listings")
-            if not normalize.is_target_diecast(r["raw_title"], r["brand_hint"])
+            if not normalize.is_wanted(r["raw_title"], r["brand_hint"],
+                                       exclude_fantasy=cfg.exclude_fantasy)
         ]
         if stale:
             conn.executemany("DELETE FROM listings WHERE id = ?", [(i,) for i in stale])
             print(f"  dropped {len(stale)} listing(s) no longer matching the filters")
+
+        # Brand, series and realism are derived, and upserts keep the first
+        # non-null value so a terse title cannot clobber a good one. That means
+        # a classification made under an older rule would survive this rebuild
+        # forever, so clear them and let the loop below derive them again.
+        conn.execute("UPDATE products SET brand = NULL, series = NULL, realism = NULL")
 
         rows = conn.execute(
             """SELECT id, raw_title, image_url, brand_hint FROM listings
@@ -159,7 +173,7 @@ def regroup(cfg: Config) -> tuple[int, int]:
     return before, after
 
 
-async def scrape(cfg: Config, only: list[str] | None = None) -> RunReport:
+async def scrape(cfg: Config, only: list[str] | None = None, *, fast: bool = False) -> RunReport:
     all_sources = build_sources(cfg, only)
     if not all_sources:
         raise SystemExit("No sources enabled or matched. Check config.yaml.")
@@ -194,7 +208,8 @@ async def scrape(cfg: Config, only: list[str] | None = None) -> RunReport:
 
             print(f"\nScraping: {', '.join(s.label for s in sources)}")
             outcomes = await asyncio.gather(
-                *(_run_source(s, cfg.queries) for s in sources)
+                *(_run_source(s, cfg.fast_queries if fast else cfg.queries)
+                  for s in sources)
             )
 
             for result, items in outcomes:
@@ -215,7 +230,8 @@ async def scrape(cfg: Config, only: list[str] | None = None) -> RunReport:
                     ok=result.ok, items=result.items, error=result.error,
                 )
                 report.results.append(result)
-                print(f"  [{result.name}] {result.items} items within cap")
+                print(f"  [{result.name}] {result.items} items"
+                      f"{' within cap' if cfg.max_price else ''}")
 
         report.products = conn.execute("SELECT COUNT(*) c FROM products").fetchone()["c"]
 

@@ -24,7 +24,7 @@ them will tell you what the others charge:
 
 | | Examples | Why it matters |
 |---|---|---|
-| **Marketplaces** | Amazon.in, Flipkart | Widest range, wildly variable pricing |
+| **Marketplaces** | Amazon.in, Flipkart, FirstCry | Widest range, wildly variable pricing |
 | **Quick-commerce** | Blinkit, Instamart, Zepto | 10-minute delivery, but priced **per delivery area** |
 | **Specialty shops** | Kinder Logs, ItsFun, Toy Collectors India, +14 more | Where the rare castings actually are |
 
@@ -103,7 +103,8 @@ quick-commerce app so its saved address matches.
 ## Commands
 
 ```bash
-python cli.py scrape                       # every enabled shop
+python cli.py scrape                       # every enabled shop, every query
+python cli.py scrape --fast                # the 2-minute cycle: watched brands only
 python cli.py scrape --only amazon_in      # just one
 python cli.py serve --port 8000            # dashboard
 python cli.py region set <city|pincode>    # change delivery region
@@ -112,6 +113,10 @@ python cli.py regroup                      # re-derive grouping, no re-scrape
 python cli.py top --limit 20               # cheapest finds in the terminal
 python cli.py stats                        # per-shop summary
 python cli.py watch add "treasure hunt" --target 500
+python cli.py watch add "*" --brand Majorette --pack-min 1 --pack-max 1 --target 300
+python cli.py alerts                       # send anything that changed
+python cli.py bot poll                     # answer /commands sent to the bot
+python cli.py bot commands --on pause      # enable a bot command
 ```
 
 `regroup` exists because grouping rules change more often than prices do. After
@@ -173,8 +178,23 @@ shopify:
 ```
 
 **Not reachable this way** — custom platforms with no public product JSON, each
-needing a bespoke HTML adapter: **Karz and Dolls**, **Toyworld Jaipur**,
-**FirstCry**, **Hamleys India**, **DieCast India**.
+needing a bespoke adapter: **Karz and Dolls**, **Toyworld Jaipur**,
+**Hamleys India**, **DieCast India**.
+
+**FirstCry** is the one that got a bespoke adapter. It runs a custom ASP.NET
+storefront, but its listing pages page through a JSON service that answers
+plain HTTP requests:
+
+```
+/svcs/ProductFilter.svc/GetSubcategoryWisePagingProducts?CatId=5&BrandId=113
+```
+
+The service is addressable only by category and brand id — its search sibling
+ignores `SearchString` and returns the entire 479k-product catalogue — so the
+adapter resolves each query against `/search?q=`, which redirects to the brand
+page whose hidden inputs carry the ids. Queries that land on a brand get the
+full catalogue through the service; the rest fall back to the 20 cards the
+search page renders server-side.
 
 ---
 
@@ -232,6 +252,151 @@ Detection matches ~90 real marques and ~180 real models, because titles often
 give only the model ("Corvette") with no manufacturer. Word boundaries matter:
 "Rodger **Dodger**" must not match *Dodge*, and "**Jeep**ster Commando" is a
 real Jeep a naive match would miss.
+
+With `exclude_fantasy: true` this stops being only a label and becomes a gate:
+fantasy castings are dropped at store time rather than kept and filtered later.
+**Mixed** is never dropped — a 5-pack has no single answer, so multipacks and
+track sets always survive. The gate lives in the pipeline, not in each adapter,
+so one flag governs every shop and `regroup` re-applies it to everything
+already on disk.
+
+---
+
+## How fast an alert reaches you
+
+Polling has a floor, and the honest number is the cycle length plus the gap
+between cycles. Three tiers, because a full sweep of every shop and every query
+takes about two minutes and is the wrong thing to run at speed:
+
+| Tier | Every | What it covers | Cycle |
+|---|---|---|---|
+| **fast** | 2 min | `fast_sources` × `fast_queries` — the watched brands at the shops that stock them near MRP | ~35s |
+| **full** | 20 min | every enabled shop, every query | ~2 min |
+| **blinkit** | 1 hour | quick-commerce, browser-driven | ~5 min |
+
+Worst case on the fast tier is therefore under three minutes from a listing
+appearing to a message arriving, against about seven and a half before.
+
+Two things bought that. Shops already ran concurrently, so the sweep was as
+long as its slowest shop — and that shop was slow because its own queries ran
+strictly one after another; `Source.collect` now runs them in a small window.
+And the fast tier stopped asking every shop about every collector marque:
+`fast_queries` holds only the brands actually watched.
+
+---
+
+## Cross-checking the price
+
+A shop's stated MRP is not a ceiling. **372 of 374 listings sit at or under
+their own stated MRP**, because shops set the MRP field to whatever they are
+charging — so comparing `price` to `mrp` passes everything and guards nothing.
+
+What works is the catalogue's own view of what a class of thing costs:
+
+| Class | Median |
+|---|---|
+| Hot Wheels mainline single | **₹179** |
+| Hot Wheels Premium single | ₹626 |
+| Hot Wheels Monster Trucks single | ₹549 |
+| Majorette Premium single | ₹359 |
+| Tomica single | ₹449 |
+
+`max_markup` is how far over that median an item may sit and still be worth a
+message. At `0.25` a ₹179 mainline alerts up to about ₹224 — a little over is
+fine — and a ₹358 one (100% over) is not sent.
+
+A class needs at least five in-stock listings before it is trusted as a
+baseline; below that nothing is judged, so a thin brand never produces false
+rejections. Judging happens against the item's own class, so a genuinely
+expensive Premium is not mistaken for an overpriced mainline.
+
+Like muting, this suppresses **delivery only**. The listing is still stored,
+still shown in the dashboard for comparison, and still remembered — so if it
+later drops to a sane price you hear about the drop rather than nothing.
+
+---
+
+## The Telegram bot
+
+Alerts push; the bot also answers. Commands arrive through `getUpdates` rather
+than a webhook, because there is no always-on listener here — `cli.py bot poll`
+runs in the same scheduled cycle as the scraper, so a command is answered a few
+minutes after it is sent.
+
+Eight commands ship enabled:
+
+| | |
+|---|---|
+| `/help` | what the bot can do (cannot be switched off) |
+| `/status` | pipeline health and per-shop counts |
+| `/filter [off\|on\|reset] [shop…]` | mute or unmute shops |
+| `/find <text>` | search the catalogue |
+| `/deals` | biggest price gaps between shops |
+| `/watch` | your watch rules and what they match |
+| `/stock` | what is out of stock, per shop |
+| `/photos [on\|off]` | product photos in alerts |
+
+Seven more ship **off** — `/pause`, `/resume`, `/top`, `/stats`, `/region`,
+`/history`, `/commands` — and are switched on from the dashboard's **Bot** tab,
+or with `/commands on pause` once that one is enabled.
+
+A disabled command is not merely refused: it is left out of `/help` and out of
+the menu Telegram shows, so the bot never advertises something it will not do.
+Toggling one re-pushes that menu.
+
+### Photos
+
+A title like *"Hot Wheels HW Torque Free Wheel Die Cast"* identifies nothing —
+the picture is what tells you which casting it is. Alerts carry one, taken from
+the listing rather than the product, so you see the shop's own photo.
+
+| Batch | What arrives |
+|---|---|
+| 1 with a photo | one captioned picture |
+| 2–10 with photos | one album, each captioned |
+| more than 10 | the full text digest, plus an album of the first 10 |
+
+Captions carry the price, the shop and the link, so a batch that fits in one
+album needs no text message at all.
+
+Images are requested at 320px where the CDN can resize from the URL — Shopify
+via `&width=`, Blinkit via Cloudflare's `/cdn-cgi/image/`, FirstCry via its
+size path segment. That is 632KB → 24KB for a Blinkit photo. Telegram
+re-compresses anyway, so the gain is that it fetches fast and never meets its
+10MB limit on a source image.
+
+Any failure in the picture path falls back to the text digest: a photo is a
+nicety, a missed restock is not. `/photos off` (or the Bot tab) for text only.
+
+### What `target_price` does
+
+It gates **price drops only**. A new listing or a back-in-stock alert fires
+whatever the price, so a rule reading "Hot Wheels · realistic · single ·
+target ₹300" still messages you about a ₹1,495 one when it first appears. The
+target is what a drop is measured against — a listing falling from above it to
+at-or-below it — not a ceiling on the rule.
+
+If you want a ceiling, that is a different change; the rule filters are brand,
+realism, series, pack size, shop and stock.
+
+### Delivery log
+
+`alert_state` records what the watcher *saw*. That is not the same as what it
+*sent*: a run can evaluate cleanly and still fail to deliver, and there was no
+way to tell the two apart — "did it alert me on Tuesday?" could only be
+inferred. `notify_log` records every delivery attempt: when, which channel,
+what shape went out, how many alerts, and whether it succeeded.
+
+`/status` reports the last send and a seven-day tally; the Bot tab shows the
+full table.
+
+### Muting
+
+`/filter off blinkit` stops Blinkit alerts. The shop is still scraped and still
+appears in the dashboard — only the messaging stops. Muting is applied *after*
+evaluation, never before, because alert state has to keep advancing while a
+shop is quiet; otherwise unmuting would dump every change that happened in the
+meantime. The same holds for `/pause`: you get the next change, not the backlog.
 
 ---
 
@@ -295,6 +460,9 @@ why `regroup` can rebuild grouping offline without re-scraping.
 python tests/test_normalize.py   # brands, 1:64 gate, packs, realism, matching
 python tests/test_regroup.py     # regroup must never destroy listings
 python tests/test_stock.py       # out-of-stock + nullable-price migration
+python tests/test_alerts.py      # transitions, seeding, HTML escaping
+python tests/test_firstcry.py    # both FirstCry shapes: service JSON and cards
+python tests/test_bot.py         # command toggles, muting, the keep policy
 ```
 
 No Playwright browsers needed — the suite is pure logic. CI runs it on Python
@@ -311,8 +479,12 @@ region:            # use `cli.py region set`, not hand edits
   pincode: "600127"
   lat: 12.8406
   lon: 80.1534
-max_price: 2000    # enforced at parse time — dearer items are never stored
-queries: [...]     # search terms fanned out to every shop
+max_price: null         # a ceiling at parse time; null means no ceiling
+exclude_fantasy: true   # mainlines only — drop in-house castings
+max_markup: 0.25        # reject alerts priced >25% over their class median
+queries: [...]          # search terms fanned out to every shop
+fast_queries: [...]     # the subset polled on the 2-minute cycle
+fast_sources: [...]     # the shops polled on the 2-minute cycle
 scrape:
   match_threshold: 87   # raise to split more, lower to merge more
   headless: true

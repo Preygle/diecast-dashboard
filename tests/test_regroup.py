@@ -19,6 +19,10 @@ def main() -> int:
     cfg = config.load()
     tmp = Path(tempfile.mkdtemp()) / "t.db"
     cfg.database = tmp
+    # This test is about listings surviving a rebuild, not about which
+    # castings we like. Pin the taste filter off so config.yaml cannot
+    # change the expected counts out from under it.
+    cfg.exclude_fantasy = False
 
     titles = [
         ("amazon_in", "a1", "Hot Wheels Basic Car 5-Pack, Multicolor, Set of 5 Toy Cars 1:64"),

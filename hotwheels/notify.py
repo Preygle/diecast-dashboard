@@ -12,6 +12,7 @@ numbers banned - not a trade worth making for a price alert.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -60,6 +61,33 @@ def set_env_value(key: str, value: str, path: Path | None = None) -> None:
     f.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
+# Telegram fetches photo URLs itself and re-compresses them, so the point of
+# asking a CDN for a smaller variant is not the bytes on our wire - it is that
+# Telegram fetches faster and never meets its 10MB limit on a source image.
+# Every shop here sits behind a CDN that resizes from the URL; anything else is
+# passed through untouched.
+THUMB_WIDTH = 320
+
+
+def thumb_url(url: str | None, width: int = THUMB_WIDTH) -> str | None:
+    """A smaller variant of a product image, where the CDN offers one."""
+    if not url:
+        return None
+    if "cdn.shopify.com" in url:
+        sep = "&" if "?" in url else "?"
+        return f"{url}{sep}width={width}"
+    if "cdn.grofers.com" in url:
+        # Cloudflare image resizing, inserted between host and path.
+        host, _, path = url.partition(".com/")
+        if path:
+            return f"{host}.com/cdn-cgi/image/f=auto,w={width},q=60/{path}"
+    if "cdn.fcglcdn.com" in url:
+        # FirstCry encodes the size as a path segment. What we store is
+        # already small; only shrink it if a larger variant was captured.
+        return re.sub(r"/products/\d+x\d+/", "/products/219x265/", url)
+    return url
+
+
 class NotifyError(RuntimeError):
     pass
 
@@ -101,6 +129,23 @@ class Telegram:
             raise NotifyError("no TELEGRAM_CHAT_ID set")
         return self.call("sendPhoto", chat_id=self.chat_id,
                          photo=photo_url, caption=caption[:1024], parse_mode="HTML")
+
+    def send_album(self, items: list[dict[str, str]]) -> dict[str, Any]:
+        """Send 2-10 captioned photos as one album.
+
+        Telegram rejects a group of one, so a single photo goes through
+        `send_photo` instead - the caller picks.
+        """
+        if not self.chat_id:
+            raise NotifyError("no TELEGRAM_CHAT_ID set")
+        if not 2 <= len(items) <= 10:
+            raise NotifyError(f"an album needs 2-10 photos, got {len(items)}")
+        media = [
+            {"type": "photo", "media": it["url"],
+             "caption": it.get("caption", "")[:1024], "parse_mode": "HTML"}
+            for it in items
+        ]
+        return self.call("sendMediaGroup", chat_id=self.chat_id, media=media)
 
     def updates(self, offset: int | None = None, timeout: int = 0) -> list[dict[str, Any]]:
         payload: dict[str, Any] = {"timeout": timeout}

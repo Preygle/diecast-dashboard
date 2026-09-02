@@ -311,6 +311,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
     <button role="tab" aria-selected="true"  data-tab="catalog">Catalog</button>
     <button role="tab" aria-selected="false" data-tab="deals">Price gaps</button>
     <button role="tab" aria-selected="false" data-tab="watch">Watchlist</button>
+    <button role="tab" aria-selected="false" data-tab="bot">Bot</button>
     <button role="tab" aria-selected="false" data-tab="runs">Scrape log</button>
   </nav>
 </header>
@@ -353,6 +354,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
     <div id="watchBody"></div>
   </section>
 
+  <section id="tab-bot" class="hidden"></section>
   <section id="tab-runs" class="hidden"></section>
 </main>
 
@@ -418,9 +420,9 @@ document.getElementById("filtToggle").onclick =
 document.querySelectorAll("nav.tabs button").forEach(b => {
   b.onclick = () => {
     document.querySelectorAll("nav.tabs button").forEach(x => x.setAttribute("aria-selected", x === b));
-    ["catalog","deals","watch","runs"].forEach(t =>
+    ["catalog","deals","watch","bot","runs"].forEach(t =>
       document.getElementById("tab-" + t).classList.toggle("hidden", t !== b.dataset.tab));
-    ({deals: loadDeals, watch: loadWatch, runs: loadRuns}[b.dataset.tab] || (()=>{}))();
+    ({deals: loadDeals, watch: loadWatch, bot: loadBot, runs: loadRuns}[b.dataset.tab] || (()=>{}))();
   };
 });
 
@@ -900,6 +902,153 @@ async function loadRuns() {
   });
   tbl.appendChild(tb);
   host.innerHTML = ""; host.appendChild(tbl);
+}
+
+/* ======================================================================= bot */
+/* The Telegram bot's command list and mute settings. Commands the bot will not
+   answer are also kept out of its menu, so this page is the single place that
+   decides what the bot advertises. */
+async function loadBot() {
+  const host = document.getElementById("tab-bot");
+  const resp = await fetch("/api/bot");
+  if (!resp.ok) {
+    // Almost always a dashboard process older than these routes.
+    host.innerHTML = `<div class="empty">The running dashboard does not have the
+      bot API (HTTP ${resp.status}). Restart it to pick up the new routes.</div>`;
+    return;
+  }
+  const data = await resp.json();
+  host.innerHTML = "";
+
+  const wrap = el("div"); wrap.style.cssText = "display:grid;gap:18px;max-width:900px";
+
+  /* -- pause banner ------------------------------------------------------ */
+  const top = el("div", "note");
+  top.innerHTML = data.paused
+    ? `<b style="color:var(--critical)">Alerts are paused</b> until ${new Date(data.paused_until).toLocaleString("en-IN")}.`
+    : `Alerts are live. Scraping and the dashboard are never affected by anything on this page.`;
+  const pauseBtn = el("button", "ghost");
+  pauseBtn.textContent = data.paused ? "Resume alerts" : "Pause 8h";
+  pauseBtn.style.marginLeft = "10px";
+  pauseBtn.onclick = async () => {
+    await fetch("/api/bot/pause", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({hours: data.paused ? null : 8})});
+    loadBot();
+  };
+  top.appendChild(pauseBtn);
+
+  const photoBtn = el("button", "ghost");
+  photoBtn.textContent = data.photos ? "Photos: on" : "Photos: off";
+  photoBtn.title = "Product photos in alerts. Titles alone rarely identify a casting.";
+  photoBtn.style.marginLeft = "8px";
+  photoBtn.onclick = async () => {
+    await fetch("/api/bot/photos", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({enabled: !data.photos})});
+    loadBot();
+  };
+  top.appendChild(photoBtn);
+  wrap.appendChild(top);
+
+  /* -- commands ---------------------------------------------------------- */
+  const h1 = el("h3"); h1.textContent = "Commands";
+  h1.style.cssText = "margin:0;font-size:14px";
+  const sub1 = el("div", "note");
+  const onCount = data.commands.filter(c => c.enabled).length;
+  sub1.textContent = `${onCount} of ${data.commands.length} enabled. `
+    + `Disabled commands are hidden from the bot's menu and from /help.`;
+  const tbl = el("table");
+  tbl.innerHTML = `<thead><tr><th style="width:74px">Enabled</th><th>Command</th>
+    <th>What it does</th></tr></thead>`;
+  const tb = el("tbody");
+  data.commands.forEach(c => {
+    const tr = el("tr");
+    const tdSw = el("td");
+    const sw = el("input"); sw.type = "checkbox"; sw.checked = c.enabled;
+    sw.disabled = c.always_on;
+    sw.title = c.always_on ? "/help can never be switched off" : "";
+    sw.style.cssText = "width:16px;height:16px;cursor:" + (c.always_on ? "not-allowed" : "pointer");
+    sw.onchange = async () => {
+      const r = await fetch("/api/bot/commands/" + c.name, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({enabled: sw.checked})});
+      if (!r.ok) { sw.checked = !sw.checked; }
+      loadBot();
+    };
+    tdSw.appendChild(sw);
+    const tdName = el("td");
+    tdName.innerHTML = `<code>${c.slash}${c.usage ? " " + c.usage : ""}</code>`
+      + (c.always_on ? ` <span class="sub">always on</span>` : "");
+    const tdWhat = el("td"); tdWhat.textContent = c.summary;
+    tr.append(tdSw, tdName, tdWhat); tb.appendChild(tr);
+  });
+  tbl.appendChild(tb);
+  wrap.append(h1, sub1, tbl);
+
+  /* -- shop filter ------------------------------------------------------- */
+  const h2 = el("h3"); h2.textContent = "Alert filter";
+  h2.style.cssText = "margin:14px 0 0;font-size:14px";
+  const sub2 = el("div", "note");
+  sub2.textContent = "Muted shops are still scraped and still appear in the catalog — "
+    + "you just stop being messaged about them. Unmuting does not replay the backlog.";
+  const opts = el("div", "fopts");
+  (META.sources || []).forEach(src => {
+    const muted = data.muted_sources.includes(src.name);
+    const b = el("button", "fopt");
+    b.setAttribute("aria-pressed", String(!muted));
+    b.innerHTML = `<span class="tick">${muted ? "" : "✓"}</span>
+      <span class="nm"><span class="dot" style="display:inline-block;background:${srcColor(src.name)}"></span>
+      ${src.label}</span><span class="ct">${muted ? "muted" : "alerting"}</span>`;
+    b.onclick = async () => {
+      const next = muted
+        ? data.muted_sources.filter(n => n !== src.name)
+        : data.muted_sources.concat([src.name]);
+      await fetch("/api/bot/filter", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({muted_sources: next})});
+      loadBot();
+    };
+    opts.appendChild(b);
+  });
+  wrap.append(h2, sub2, opts);
+
+  /* -- delivery log ------------------------------------------------------ */
+  /* alert_state records what was *seen*; this records what was *sent*. They
+     are different questions, and only this one answers "did it message me?" */
+  const h3 = el("h3"); h3.textContent = "Delivery log";
+  h3.style.cssText = "margin:14px 0 0;font-size:14px";
+  const logHost = el("div");
+  logHost.innerHTML = `<div class="note">Loading…</div>`;
+  wrap.append(h3, logHost);
+  host.appendChild(wrap);
+
+  const sends = await (await fetch("/api/sends?limit=20")).json();
+  const sum = sends.summary;
+  logHost.innerHTML = "";
+  const head = el("div", "note");
+  head.textContent = sum.last
+    ? `Last sent ${new Date(sum.last.ts).toLocaleString("en-IN")} — `
+      + `${sum.last.alerts} alert(s), ${sum.last.shape}.`
+      + ` Last ${sum.days} days: ${sum.messages} message(s), ${sum.alerts} alert(s), `
+      + `${sum.failures} failure(s).`
+    : "Nothing sent yet. The log starts from the next alert.";
+  logHost.appendChild(head);
+
+  if (sends.recent.length) {
+    const t = el("table");
+    t.innerHTML = `<thead><tr><th>When</th><th>Channel</th><th>Shape</th>
+      <th class="num">Alerts</th><th>What</th><th>Result</th></tr></thead>`;
+    const tb = el("tbody");
+    sends.recent.forEach(r => {
+      const tr = el("tr");
+      tr.innerHTML = `<td>${new Date(r.ts).toLocaleString("en-IN")}</td>
+        <td>${r.channel}</td><td><code>${r.shape}</code></td>
+        <td class="num">${r.alerts}</td><td>${r.kinds || "—"}</td>
+        <td style="color:${r.ok ? "var(--good)" : "var(--critical)"}">
+          ${r.ok ? "sent" : "failed"}${r.error ? " — " + r.error : ""}</td>`;
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    logHost.appendChild(t);
+  }
 }
 
 /* ==================================================================== region */

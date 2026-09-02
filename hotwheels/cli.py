@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from collections import Counter
 
 # The Windows console defaults to cp1252, which cannot encode the rupee sign.
 if hasattr(sys.stdout, "reconfigure"):
@@ -24,8 +25,13 @@ from hotwheels import config, db, pipeline, queries  # noqa: E402
 
 def cmd_scrape(args: argparse.Namespace) -> int:
     cfg = config.load(args.config)
-    print(f"Region: {cfg.region.label} ({cfg.region.pincode})  |  cap ₹{cfg.max_price:.0f}")
-    report = asyncio.run(pipeline.scrape(cfg, only=args.only))
+    cap = f"cap ₹{cfg.max_price:.0f}" if cfg.max_price else "no price cap"
+    taste = "mainlines only" if cfg.exclude_fantasy else "all castings"
+    print(f"Region: {cfg.region.label} ({cfg.region.pincode})  |  {cap}  |  {taste}")
+    # --fast narrows both axes: the watched brands, at the shops that stock
+    # them near MRP. That is what makes a two-minute poll cycle possible.
+    only = args.only or (cfg.fast_sources if args.fast else None)
+    report = asyncio.run(pipeline.scrape(cfg, only=only, fast=args.fast))
     print(report.render())
     # Exit non-zero only when a source actually errored. Finding nothing is a
     # legitimate result and must not fail a scheduled run.
@@ -45,17 +51,26 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 def cmd_alerts(args: argparse.Namespace) -> int:
     """Evaluate watch rules and notify about anything that changed."""
-    from hotwheels import alerts, notify
+    from hotwheels import alerts, bot, notify
     from hotwheels.sources import source_labels
 
     cfg = config.load(args.config)
     labels = source_labels(cfg)
 
     with db.session(cfg.database) as conn:
-        found = alerts.evaluate(conn, region=cfg.region.pincode, seed=args.seed)
+        found = alerts.evaluate(conn, region=cfg.region.pincode, seed=args.seed,
+                                max_markup=cfg.max_markup)
+        # Muting is applied after evaluation, never before: state has to keep
+        # advancing while a shop is quiet, or unmuting would dump every change
+        # that happened in the meantime.
+        found, held = bot.suppress(conn, found)
+        photos = bot.photos_on(conn)
 
     if args.seed:
         print("Seeded alert state; nothing sent.")
+        return 0
+    if held:
+        print(f"Nothing sent - {held}.")
         return 0
     if not found:
         print("No changes since the last check.")
@@ -72,11 +87,92 @@ def cmd_alerts(args: argparse.Namespace) -> int:
         print("--- dry run, not sent ---")
         return 0
 
-    sent = notify.broadcast(text)
+    # Photos go through the Telegram client directly, because an album is not
+    # something `broadcast` can express. Discord still gets the text digest.
+    tg, dc = notify.build()
+    shape = "text"
+    if tg is not None and photos:
+        sent, shape = bot.send_with_photos(tg, found, text, lambda s: labels.get(s, s))
+        if dc is not None:
+            try:
+                dc.send(text)
+                sent.append("discord")
+            except notify.NotifyError as exc:
+                print(f"  discord failed: {exc}")
+    else:
+        sent = notify.broadcast(text)
+
+    # Record the attempt either way. alert_state says what was *seen*; this is
+    # the only record of what was actually delivered, which is the question
+    # asked whenever the bot seems quiet.
+    kinds = ", ".join(f"{k}={v}" for k, v in
+                      sorted(Counter(a.kind for a in found).items()))
+    with db.session(cfg.database) as conn:
+        if sent:
+            for channel in sent:
+                db.log_send(conn, channel=channel,
+                            shape=shape if channel == "telegram" else "text",
+                            alerts=len(found), kinds=kinds, ok=True)
+        else:
+            db.log_send(conn, channel="telegram", shape=shape, alerts=len(found),
+                        kinds=kinds, ok=False, error="no channel accepted it")
+
     if not sent:
         print("Could not send. Run `python cli.py notify status`.")
         return 1
     print("Sent via:", ", ".join(sent))
+    return 0
+
+
+def cmd_bot(args: argparse.Namespace) -> int:
+    """Answer commands people sent the bot, and keep its menu in step.
+
+    Polling rather than a webhook is deliberate: this runs from the same
+    scheduled task as the scraper, so commands are answered a few minutes
+    after they are sent without anything listening in between.
+    """
+    from hotwheels import bot, notify
+    from hotwheels.sources import source_labels
+
+    cfg = config.load(args.config)
+    labels = source_labels(cfg)
+
+    with db.session(cfg.database) as conn:
+        if args.action == "commands":
+            for name in args.on:
+                bot.set_enabled(conn, name.lstrip("/"), True)
+            for name in args.off:
+                bot.set_enabled(conn, name.lstrip("/"), False)
+            for row in bot.command_table(conn):
+                mark = "on " if row["enabled"] else "off"
+                lock = " (always on)" if row["always_on"] else ""
+                print(f"  {mark}  {row['slash']:<10} {row['summary']}{lock}")
+            if not (args.on or args.off):
+                return 0
+
+        tg, _ = notify.build()
+        if tg is None:
+            print("No TELEGRAM_BOT_TOKEN set. Run `python cli.py notify status`.")
+            return 1
+
+        # Telegram caches the / menu, so push it whenever the set may have
+        # changed - otherwise a freshly enabled command stays invisible.
+        try:
+            tg.call("setMyCommands", commands=bot.menu(conn))
+        except Exception as exc:
+            print(f"  could not update the command menu: {exc}")
+
+        if args.action in ("commands", "menu"):
+            print(f"Menu now advertises {len(bot.menu(conn))} command(s).")
+            return 0
+
+        handled = bot.poll(conn, cfg, tg, labels)
+
+    if not handled:
+        print("No new commands.")
+        return 0
+    for text, outcome in handled:
+        print(f"  {text} -> {outcome}")
     return 0
 
 
@@ -282,6 +378,8 @@ def main() -> int:
 
     s = sub.add_parser("scrape", help="fetch listings from every enabled source")
     s.add_argument("--only", nargs="*", help="limit to these source names")
+    s.add_argument("--fast", action="store_true",
+                   help="use fast_queries - the watched brands only, for quick polling")
     s.set_defaults(fn=cmd_scrape)
 
     s = sub.add_parser("serve", help="run the dashboard")
@@ -294,6 +392,13 @@ def main() -> int:
                    help="record current state without sending (first run)")
     s.add_argument("--dry-run", action="store_true", help="print instead of sending")
     s.set_defaults(fn=cmd_alerts)
+
+    s = sub.add_parser("bot", help="answer Telegram commands sent since last run")
+    s.add_argument("action", nargs="?", default="poll",
+                   choices=["poll", "commands", "menu"])
+    s.add_argument("--on", nargs="*", default=[], help="enable these commands")
+    s.add_argument("--off", nargs="*", default=[], help="disable these commands")
+    s.set_defaults(fn=cmd_bot)
 
     s = sub.add_parser("notify", help="configure and test alert channels")
     s.add_argument("action", nargs="?", default="status",

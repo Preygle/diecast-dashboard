@@ -337,3 +337,62 @@ def watchlist(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         w["best_price"] = best
         w["hit"] = bool(w["target_price"] and best and best <= w["target_price"])
     return rows
+
+
+# --------------------------------------------------------------------------
+# markup guard
+# --------------------------------------------------------------------------
+#
+# A shop's stated MRP is not a ceiling: 372 of 374 listings sit at or under
+# their own, because shops set MRP to whatever they are charging. Comparing
+# price to `listings.mrp` therefore passes everything and guards nothing.
+#
+# What does work is the catalogue's own view of what a class of thing costs.
+# Hot Wheels mainline singles cluster hard on Rs 179 (the real MRP), Premium
+# on Rs 626, Tomica on Rs 449 - so the median price of everything sharing a
+# (brand, series, pack size) is a good stand-in for "what this should cost",
+# and it maintains itself as the market moves.
+
+# Below this many comparable listings the median is noise, not a baseline,
+# and nothing is judged - a thin class must not produce false rejections.
+MIN_SAMPLE = 5
+
+
+def price_baselines(conn: sqlite3.Connection,
+                    region: str | None = None) -> dict[tuple, float]:
+    """Median in-stock price for each (brand, series, pack_size) class."""
+    rc, rp = _region_clause(region)
+    rows = conn.execute(
+        f"""SELECT p.brand, p.series, p.pack_size, l.price
+              FROM products p JOIN listings l ON l.product_id = p.id
+             WHERE l.price IS NOT NULL AND l.price > 0 AND l.in_stock = 1
+               AND p.brand IS NOT NULL {rc}""", rp
+    ).fetchall()
+
+    buckets: dict[tuple, list[float]] = {}
+    for r in rows:
+        buckets.setdefault((r["brand"], r["series"], r["pack_size"]), []).append(r["price"])
+
+    out: dict[tuple, float] = {}
+    for key, prices in buckets.items():
+        if len(prices) >= MIN_SAMPLE:
+            prices.sort()
+            mid = len(prices) // 2
+            out[key] = (prices[mid] if len(prices) % 2
+                        else (prices[mid - 1] + prices[mid]) / 2)
+    return out
+
+
+def markup_of(price: float | None, brand: str | None, series: str | None,
+              pack_size: int | None,
+              baselines: dict[tuple, float]) -> float | None:
+    """How far above its class this price sits, or None when unjudgeable.
+
+    0.0 means at or below the class median; 0.25 means a quarter over.
+    """
+    if price is None or price <= 0:
+        return None
+    base = baselines.get((brand, series, pack_size))
+    if not base:
+        return None
+    return max(0.0, price / base - 1.0)

@@ -10,7 +10,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -97,6 +97,22 @@ CREATE TABLE IF NOT EXISTS bot_state (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- What the bot actually sent. alert_state records what was *seen*, which is
+-- not the same thing: a run can evaluate cleanly and still fail to deliver.
+-- Without this, "did it alert me on Tuesday?" can only be inferred.
+CREATE TABLE IF NOT EXISTS notify_log (
+    id      INTEGER PRIMARY KEY,
+    ts      TEXT NOT NULL,
+    channel TEXT NOT NULL,          -- telegram, discord
+    shape   TEXT NOT NULL,          -- text, photo, album, text+album
+    alerts  INTEGER NOT NULL DEFAULT 0,
+    kinds   TEXT,                   -- "new=4, price_drop=1"
+    ok      INTEGER NOT NULL DEFAULT 1,
+    error   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_notify_ts ON notify_log(ts DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS scrape_runs (
     id          INTEGER PRIMARY KEY,
@@ -261,7 +277,7 @@ def upsert_product(
                       title     = CASE WHEN length(?) > length(title) THEN ? ELSE title END,
                       brand     = COALESCE(brand, ?),
                       series    = COALESCE(series, ?),
-                      realism   = COALESCE(?, realism),
+                      realism   = COALESCE(realism, ?),
                       image_url = COALESCE(image_url, ?)
                 WHERE id = ?""",
             (ts, title, title, brand, series, realism, image_url, pid),
@@ -372,6 +388,45 @@ def finish_run(
 # --------------------------------------------------------------------------
 # bot state (small key/value scratchpad)
 # --------------------------------------------------------------------------
+
+def log_send(conn: sqlite3.Connection, *, channel: str, shape: str,
+             alerts: int, kinds: str | None = None, ok: bool = True,
+             error: str | None = None) -> None:
+    """Record one delivery attempt, successful or not."""
+    conn.execute(
+        """INSERT INTO notify_log (ts, channel, shape, alerts, kinds, ok, error)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (now(), channel, shape, alerts, kinds, int(ok), error),
+    )
+    conn.commit()
+
+
+def recent_sends(conn: sqlite3.Connection, limit: int = 25) -> list[dict[str, Any]]:
+    return [dict(r) for r in conn.execute(
+        "SELECT * FROM notify_log ORDER BY ts DESC, id DESC LIMIT ?", (limit,)
+    ).fetchall()]
+
+
+def send_summary(conn: sqlite3.Connection, days: int = 7) -> dict[str, Any]:
+    """Last delivery and a recent tally, for /status and the dashboard."""
+    last = conn.execute(
+        "SELECT * FROM notify_log ORDER BY ts DESC, id DESC LIMIT 1"
+    ).fetchone()
+    since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
+    row = conn.execute(
+        """SELECT COUNT(*) AS messages,
+                  COALESCE(SUM(alerts), 0) AS alerts,
+                  SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END) AS failures
+             FROM notify_log WHERE ts >= ?""", (since,)
+    ).fetchone()
+    return {
+        "last": dict(last) if last else None,
+        "days": days,
+        "messages": row["messages"],
+        "alerts": row["alerts"],
+        "failures": row["failures"] or 0,
+    }
+
 
 def get_state(conn: sqlite3.Connection, key: str, default: str | None = None) -> str | None:
     row = conn.execute("SELECT value FROM bot_state WHERE key = ?", (key,)).fetchone()
