@@ -104,16 +104,36 @@ class Source:
     async def search(self, query: str) -> list[Item]:
         raise NotImplementedError
 
+    # How many of this source's queries may be in flight at once. Shops run
+    # concurrently with each other already, so the slowest single shop sets
+    # the length of a sweep - and that shop is slow because its queries were
+    # strictly sequential. A small window cuts that without hammering anyone:
+    # each request still waits `delay` before the next one on its own strand.
+    query_concurrency: int = 4
+
     async def collect(self, queries: list[str]) -> list[Item]:
         """Run every query, de-duplicating by SKU within this source."""
+        sem = asyncio.Semaphore(max(1, self.query_concurrency))
+
+        async def one(q: str) -> list[Item]:
+            async with sem:
+                try:
+                    found = await self.search(q)
+                except Exception as exc:  # one bad query must not kill the source
+                    print(f"  [{self.name}] query {q!r} failed: "
+                          f"{type(exc).__name__}: {exc}")
+                    found = []
+                await self.pause()
+                return found
+
+        batches = await asyncio.gather(*(one(q) for q in queries))
+
+        # Merged in query order, not completion order, so which listing wins a
+        # duplicated SKU does not depend on how the network happened to behave.
         seen: dict[str, Item] = {}
-        for q in queries:
-            try:
-                for item in await self.search(q):
-                    seen.setdefault(item.source_sku, item)
-            except Exception as exc:  # one bad query must not kill the source
-                print(f"  [{self.name}] query {q!r} failed: {type(exc).__name__}: {exc}")
-            await self.pause()
+        for found in batches:
+            for item in found:
+                seen.setdefault(item.source_sku, item)
         return list(seen.values())
 
     async def pause(self) -> None:

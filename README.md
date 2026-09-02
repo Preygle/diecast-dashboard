@@ -103,7 +103,8 @@ quick-commerce app so its saved address matches.
 ## Commands
 
 ```bash
-python cli.py scrape                       # every enabled shop
+python cli.py scrape                       # every enabled shop, every query
+python cli.py scrape --fast                # the 2-minute cycle: watched brands only
 python cli.py scrape --only amazon_in      # just one
 python cli.py serve --port 8000            # dashboard
 python cli.py region set <city|pincode>    # change delivery region
@@ -258,6 +259,60 @@ fantasy castings are dropped at store time rather than kept and filtered later.
 track sets always survive. The gate lives in the pipeline, not in each adapter,
 so one flag governs every shop and `regroup` re-applies it to everything
 already on disk.
+
+---
+
+## How fast an alert reaches you
+
+Polling has a floor, and the honest number is the cycle length plus the gap
+between cycles. Three tiers, because a full sweep of every shop and every query
+takes about two minutes and is the wrong thing to run at speed:
+
+| Tier | Every | What it covers | Cycle |
+|---|---|---|---|
+| **fast** | 2 min | `fast_sources` × `fast_queries` — the watched brands at the shops that stock them near MRP | ~35s |
+| **full** | 20 min | every enabled shop, every query | ~2 min |
+| **blinkit** | 1 hour | quick-commerce, browser-driven | ~5 min |
+
+Worst case on the fast tier is therefore under three minutes from a listing
+appearing to a message arriving, against about seven and a half before.
+
+Two things bought that. Shops already ran concurrently, so the sweep was as
+long as its slowest shop — and that shop was slow because its own queries ran
+strictly one after another; `Source.collect` now runs them in a small window.
+And the fast tier stopped asking every shop about every collector marque:
+`fast_queries` holds only the brands actually watched.
+
+---
+
+## Cross-checking the price
+
+A shop's stated MRP is not a ceiling. **372 of 374 listings sit at or under
+their own stated MRP**, because shops set the MRP field to whatever they are
+charging — so comparing `price` to `mrp` passes everything and guards nothing.
+
+What works is the catalogue's own view of what a class of thing costs:
+
+| Class | Median |
+|---|---|
+| Hot Wheels mainline single | **₹179** |
+| Hot Wheels Premium single | ₹626 |
+| Hot Wheels Monster Trucks single | ₹549 |
+| Majorette Premium single | ₹359 |
+| Tomica single | ₹449 |
+
+`max_markup` is how far over that median an item may sit and still be worth a
+message. At `0.25` a ₹179 mainline alerts up to about ₹224 — a little over is
+fine — and a ₹358 one (100% over) is not sent.
+
+A class needs at least five in-stock listings before it is trusted as a
+baseline; below that nothing is judged, so a thin brand never produces false
+rejections. Judging happens against the item's own class, so a genuinely
+expensive Premium is not mistaken for an overpriced mainline.
+
+Like muting, this suppresses **delivery only**. The listing is still stored,
+still shown in the dashboard for comparison, and still remembered — so if it
+later drops to a sane price you hear about the drop rather than nothing.
 
 ---
 
@@ -424,9 +479,12 @@ region:            # use `cli.py region set`, not hand edits
   pincode: "600127"
   lat: 12.8406
   lon: 80.1534
-max_price: null    # a ceiling enforced at parse time; null means no ceiling
+max_price: null         # a ceiling at parse time; null means no ceiling
 exclude_fantasy: true   # mainlines only — drop in-house castings
-queries: [...]     # search terms fanned out to every shop
+max_markup: 0.25        # reject alerts priced >25% over their class median
+queries: [...]          # search terms fanned out to every shop
+fast_queries: [...]     # the subset polled on the 2-minute cycle
+fast_sources: [...]     # the shops polled on the 2-minute cycle
 scrape:
   match_threshold: 87   # raise to split more, lower to merge more
   headless: true

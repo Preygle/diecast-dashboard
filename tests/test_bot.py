@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from hotwheels import bot, config, db, normalize, notify  # noqa: E402
+from hotwheels import bot, config, db, normalize, notify, queries  # noqa: E402
 
 
 def check(label: str, got, want) -> bool:
@@ -206,6 +206,33 @@ def main() -> int:
                     ("text", False))
         ok &= check("recent sends come back newest first",
                     [r["shape"] for r in db.recent_sends(conn)], ["text", "album"])
+
+    print("markup guard")
+    # A shop's stated MRP is not a ceiling, so the baseline is the median of
+    # the class. Build one directly rather than depending on live data.
+    base = {("Hot Wheels", None, 1): 179.0, ("Hot Wheels", "Premium", 1): 626.0}
+    cases = [
+        (164, "Hot Wheels", None, 1, 0.0, "under the median reads as no markup"),
+        (179, "Hot Wheels", None, 1, 0.0, "at the median is no markup"),
+        (223.75, "Hot Wheels", None, 1, 0.25, "a quarter over reads as 0.25"),
+        (224, "Hot Wheels", None, 1, 0.2514, "Rs 224 is just past the 0.25 line"),
+        (358, "Hot Wheels", None, 1, 1.0, "double the median reads as 1.0"),
+    ]
+    for price, brand, series, pack, want, why in cases:
+        got = queries.markup_of(price, brand, series, pack, base)
+        ok &= check(why, round(got, 4) if got is not None else None, want)
+
+    ok &= check("a Premium is judged against Premiums, not mainlines",
+                round(queries.markup_of(626, "Hot Wheels", "Premium", 1, base), 4), 0.0)
+    ok &= check("an unknown class is not judged",
+                queries.markup_of(999, "Tomica", None, 1, base), None)
+    ok &= check("a missing price is not judged",
+                queries.markup_of(None, "Hot Wheels", None, 1, base), None)
+
+    print("  (thin classes are never judged)")
+    with db.session(cfg.database) as conn:
+        thin = queries.price_baselines(conn)
+        ok &= check("an empty catalogue yields no baselines", thin, {})
 
     print("keep policy")
     cases = [

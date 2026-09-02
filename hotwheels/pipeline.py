@@ -173,7 +173,7 @@ def regroup(cfg: Config) -> tuple[int, int]:
     return before, after
 
 
-async def scrape(cfg: Config, only: list[str] | None = None) -> RunReport:
+async def scrape(cfg: Config, only: list[str] | None = None, *, fast: bool = False) -> RunReport:
     all_sources = build_sources(cfg, only)
     if not all_sources:
         raise SystemExit("No sources enabled or matched. Check config.yaml.")
@@ -208,7 +208,8 @@ async def scrape(cfg: Config, only: list[str] | None = None) -> RunReport:
 
             print(f"\nScraping: {', '.join(s.label for s in sources)}")
             outcomes = await asyncio.gather(
-                *(_run_source(s, cfg.queries) for s in sources)
+                *(_run_source(s, cfg.fast_queries if fast else cfg.queries)
+                  for s in sources)
             )
 
             for result, items in outcomes:

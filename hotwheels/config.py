@@ -29,7 +29,11 @@ class Config:
     max_price: float | None
     currency: str
     exclude_fantasy: bool
+    # None disables the guard entirely.
+    max_markup: float | None
     queries: list[str]
+    fast_queries: list[str]
+    fast_sources: list[str]
     sources: dict[str, dict[str, Any]]
     delay: float
     timeout: float
@@ -70,7 +74,12 @@ def load(path: str | os.PathLike[str] | None = None) -> Config:
         max_price=(float(raw_cap) if (raw_cap := data.get("max_price")) else None),
         currency=data.get("currency", "INR"),
         exclude_fantasy=bool(data.get("exclude_fantasy", False)),
+        max_markup=(float(mk) if (mk := data.get("max_markup")) is not None else None),
         queries=list(data.get("queries", ["hot wheels"])),
+        # Falling back to the full list keeps a config without this key working.
+        fast_queries=list(data.get("fast_queries")
+                          or data.get("queries", ["hot wheels"])),
+        fast_sources=list(data.get("fast_sources") or []),
         sources=data.get("sources", {}),
         delay=float(scrape.get("delay", 1.5)),
         timeout=float(scrape.get("timeout", 30)),

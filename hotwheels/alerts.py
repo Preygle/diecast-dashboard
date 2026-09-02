@@ -47,6 +47,8 @@ class Alert:
     target_price: float | None = None
     previous_price: float | None = None
     image_url: str | None = None
+    # How far over its class median this price sits; None if unjudgeable.
+    markup: float | None = None
 
     def line(self, label: Any = None) -> str:
         shop = label(self.source) if callable(label) else self.source
@@ -113,6 +115,7 @@ def matches(conn: sqlite3.Connection, watch: dict[str, Any],
     sql = f"""
         SELECT p.id AS product_id, p.title,
                COALESCE(l.image_url, p.image_url) AS image_url,
+               p.brand, p.series, p.pack_size,
                l.source, l.price, l.in_stock, l.url
           FROM products p JOIN listings l ON l.product_id = p.id
          WHERE {' AND '.join(where)}
@@ -150,13 +153,19 @@ def _remember(conn: sqlite3.Connection, watch_id: int, m: dict[str, Any]) -> Non
 
 
 def evaluate(conn: sqlite3.Connection, *, region: str | None = None,
-             seed: bool = False) -> list[Alert]:
+             seed: bool = False,
+             max_markup: float | None = None) -> list[Alert]:
     """Compare the catalogue against remembered state and return transitions.
 
     Always updates state, whether or not anything is emitted - otherwise the
-    same transition would be reported on every subsequent run.
+    same transition would be reported on every subsequent run. That holds for
+    the markup guard too: an item priced absurdly today is remembered, so if it
+    later drops to a sane price you hear about the drop rather than nothing.
     """
+    from . import queries
+
     out: list[Alert] = []
+    baselines = queries.price_baselines(conn, region) if max_markup is not None else {}
 
     for watch in active_watches(conn):
         prior = _prior(conn, watch["id"])
@@ -182,6 +191,17 @@ def evaluate(conn: sqlite3.Connection, *, region: str | None = None,
                           and (was["price"] is None or was["price"] > target)):
                         kind = PRICE_DROP
 
+                markup = queries.markup_of(
+                    m["price"], m["brand"], m["series"], m["pack_size"], baselines
+                ) if baselines else None
+
+                # Priced far above what its class goes for. Still remembered
+                # above, so a later drop is not swallowed - just not worth a
+                # message now.
+                if (kind and max_markup is not None
+                        and markup is not None and markup > max_markup):
+                    kind = None
+
                 if kind:
                     out.append(Alert(
                         kind=kind, watch_id=watch["id"], watch_query=watch["query"],
@@ -190,6 +210,7 @@ def evaluate(conn: sqlite3.Connection, *, region: str | None = None,
                         target_price=target,
                         previous_price=was["price"] if was else None,
                         image_url=m.get("image_url"),
+                        markup=markup,
                     ))
 
             _remember(conn, watch["id"], m)

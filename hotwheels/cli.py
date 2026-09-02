@@ -28,7 +28,10 @@ def cmd_scrape(args: argparse.Namespace) -> int:
     cap = f"cap ₹{cfg.max_price:.0f}" if cfg.max_price else "no price cap"
     taste = "mainlines only" if cfg.exclude_fantasy else "all castings"
     print(f"Region: {cfg.region.label} ({cfg.region.pincode})  |  {cap}  |  {taste}")
-    report = asyncio.run(pipeline.scrape(cfg, only=args.only))
+    # --fast narrows both axes: the watched brands, at the shops that stock
+    # them near MRP. That is what makes a two-minute poll cycle possible.
+    only = args.only or (cfg.fast_sources if args.fast else None)
+    report = asyncio.run(pipeline.scrape(cfg, only=only, fast=args.fast))
     print(report.render())
     # Exit non-zero only when a source actually errored. Finding nothing is a
     # legitimate result and must not fail a scheduled run.
@@ -55,7 +58,8 @@ def cmd_alerts(args: argparse.Namespace) -> int:
     labels = source_labels(cfg)
 
     with db.session(cfg.database) as conn:
-        found = alerts.evaluate(conn, region=cfg.region.pincode, seed=args.seed)
+        found = alerts.evaluate(conn, region=cfg.region.pincode, seed=args.seed,
+                                max_markup=cfg.max_markup)
         # Muting is applied after evaluation, never before: state has to keep
         # advancing while a shop is quiet, or unmuting would dump every change
         # that happened in the meantime.
@@ -374,6 +378,8 @@ def main() -> int:
 
     s = sub.add_parser("scrape", help="fetch listings from every enabled source")
     s.add_argument("--only", nargs="*", help="limit to these source names")
+    s.add_argument("--fast", action="store_true",
+                   help="use fast_queries - the watched brands only, for quick polling")
     s.set_defaults(fn=cmd_scrape)
 
     s = sub.add_parser("serve", help="run the dashboard")
