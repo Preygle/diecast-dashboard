@@ -1010,7 +1010,45 @@ async function loadBot() {
   });
   wrap.append(h2, sub2, opts);
 
+  /* -- delivery log ------------------------------------------------------ */
+  /* alert_state records what was *seen*; this records what was *sent*. They
+     are different questions, and only this one answers "did it message me?" */
+  const h3 = el("h3"); h3.textContent = "Delivery log";
+  h3.style.cssText = "margin:14px 0 0;font-size:14px";
+  const logHost = el("div");
+  logHost.innerHTML = `<div class="note">Loading…</div>`;
+  wrap.append(h3, logHost);
   host.appendChild(wrap);
+
+  const sends = await (await fetch("/api/sends?limit=20")).json();
+  const sum = sends.summary;
+  logHost.innerHTML = "";
+  const head = el("div", "note");
+  head.textContent = sum.last
+    ? `Last sent ${new Date(sum.last.ts).toLocaleString("en-IN")} — `
+      + `${sum.last.alerts} alert(s), ${sum.last.shape}.`
+      + ` Last ${sum.days} days: ${sum.messages} message(s), ${sum.alerts} alert(s), `
+      + `${sum.failures} failure(s).`
+    : "Nothing sent yet. The log starts from the next alert.";
+  logHost.appendChild(head);
+
+  if (sends.recent.length) {
+    const t = el("table");
+    t.innerHTML = `<thead><tr><th>When</th><th>Channel</th><th>Shape</th>
+      <th class="num">Alerts</th><th>What</th><th>Result</th></tr></thead>`;
+    const tb = el("tbody");
+    sends.recent.forEach(r => {
+      const tr = el("tr");
+      tr.innerHTML = `<td>${new Date(r.ts).toLocaleString("en-IN")}</td>
+        <td>${r.channel}</td><td><code>${r.shape}</code></td>
+        <td class="num">${r.alerts}</td><td>${r.kinds || "—"}</td>
+        <td style="color:${r.ok ? "var(--good)" : "var(--critical)"}">
+          ${r.ok ? "sent" : "failed"}${r.error ? " — " + r.error : ""}</td>`;
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    logHost.appendChild(t);
+  }
 }
 
 /* ==================================================================== region */

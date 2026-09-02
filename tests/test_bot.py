@@ -156,30 +156,56 @@ def main() -> int:
     ok &= check("no image stays no image", notify.thumb_url(None), None)
 
     print("photo delivery")
+    # The reported shape is what the send log records, so it has to describe
+    # what actually went out - not what was planned.
     shapes = [
-        ("one photo, no text needed", pics(1), [("photo",)]),
-        ("a small batch is one album", pics(4), [("album",)]),
-        ("a big batch keeps the text digest", pics(12), [("text",), ("album",)]),
-        ("no images at all is text only", pics(3, False), [("text",)]),
+        ("one photo, no text needed", pics(1), [("photo",)], "photo"),
+        ("a small batch is one album", pics(4), [("album",)], "album"),
+        ("a big batch keeps the text digest", pics(12),
+         [("text",), ("album",)], "text+album"),
+        ("no images at all is text only", pics(3, False), [("text",)], "text"),
         ("a mixed batch keeps the text digest",
-         pics(2) + pics(2, False), [("text",), ("album",)]),
+         pics(2) + pics(2, False), [("text",), ("album",)], "text+album"),
     ]
-    for why, batch, want in shapes:
+    for why, batch, want, want_shape in shapes:
         tg = FakeTelegram()
-        bot.send_with_photos(tg, batch, "digest", None)
-        ok &= check(why, [(c[0],) for c in tg.calls], want)
+        _, shape = bot.send_with_photos(tg, batch, "digest", None)
+        ok &= check(why, ([(c[0],) for c in tg.calls], shape), (want, want_shape))
 
+    tg = FakeTelegram()
+    bot.send_with_photos(tg, pics(12), "digest", None)
     ok &= check("a 12-photo batch still sends a legal album of 10",
-                next(c[1] for c in
-                     (lambda t: (bot.send_with_photos(t, pics(12), "d", None), t.calls)[1])
-                     (FakeTelegram()) if c[0] == "album"), 10)
+                next(c[1] for c in tg.calls if c[0] == "album"), 10)
 
     print("photo failure never loses the alert")
     for mode in ("album", "photo"):
         tg = FakeTelegram(fail=mode)
-        sent = bot.send_with_photos(tg, pics(4 if mode == "album" else 1), "digest", None)
+        sent, shape = bot.send_with_photos(
+            tg, pics(4 if mode == "album" else 1), "digest", None)
         ok &= check(f"{mode} failure falls back to text",
-                    ([c[0] for c in tg.calls], sent), (["text"], ["telegram"]))
+                    ([c[0] for c in tg.calls], sent, shape),
+                    (["text"], ["telegram"], "text"))
+
+    print("send log")
+    with db.session(cfg.database) as conn:
+        empty = db.send_summary(conn)
+        ok &= check("an empty log reports no last send",
+                    (empty["last"], empty["messages"]), (None, 0))
+
+        db.log_send(conn, channel="telegram", shape="album", alerts=4,
+                    kinds="new=4", ok=True)
+        db.log_send(conn, channel="telegram", shape="text", alerts=2,
+                    kinds="price_drop=2", ok=False, error="network down")
+
+        summ = db.send_summary(conn)
+        ok &= check("both attempts counted", summ["messages"], 2)
+        ok &= check("alerts are totalled", summ["alerts"], 6)
+        ok &= check("a failed send is counted as a failure", summ["failures"], 1)
+        ok &= check("the newest send is the one reported",
+                    (summ["last"]["shape"], bool(summ["last"]["ok"])),
+                    ("text", False))
+        ok &= check("recent sends come back newest first",
+                    [r["shape"] for r in db.recent_sends(conn)], ["text", "album"])
 
     print("keep policy")
     cases = [

@@ -254,6 +254,16 @@ def create_app(config_path: str | None = None) -> FastAPI:
         finally:
             c.close()
 
+    @app.get("/api/sends")
+    def sends(limit: int = 25) -> dict[str, Any]:
+        """What the bot actually delivered, and a recent tally."""
+        c = conn()
+        try:
+            return {"recent": db.recent_sends(c, limit),
+                    "summary": db.send_summary(c)}
+        finally:
+            c.close()
+
     @app.get("/api/runs")
     def runs(limit: int = 25) -> list[dict[str, Any]]:
         c = conn()

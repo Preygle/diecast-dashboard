@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from collections import Counter
 
 # The Windows console defaults to cp1252, which cannot encode the rupee sign.
 if hasattr(sys.stdout, "reconfigure"):
@@ -85,8 +86,9 @@ def cmd_alerts(args: argparse.Namespace) -> int:
     # Photos go through the Telegram client directly, because an album is not
     # something `broadcast` can express. Discord still gets the text digest.
     tg, dc = notify.build()
+    shape = "text"
     if tg is not None and photos:
-        sent = bot.send_with_photos(tg, found, text, lambda s: labels.get(s, s))
+        sent, shape = bot.send_with_photos(tg, found, text, lambda s: labels.get(s, s))
         if dc is not None:
             try:
                 dc.send(text)
@@ -95,6 +97,21 @@ def cmd_alerts(args: argparse.Namespace) -> int:
                 print(f"  discord failed: {exc}")
     else:
         sent = notify.broadcast(text)
+
+    # Record the attempt either way. alert_state says what was *seen*; this is
+    # the only record of what was actually delivered, which is the question
+    # asked whenever the bot seems quiet.
+    kinds = ", ".join(f"{k}={v}" for k, v in
+                      sorted(Counter(a.kind for a in found).items()))
+    with db.session(cfg.database) as conn:
+        if sent:
+            for channel in sent:
+                db.log_send(conn, channel=channel,
+                            shape=shape if channel == "telegram" else "text",
+                            alerts=len(found), kinds=kinds, ok=True)
+        else:
+            db.log_send(conn, channel="telegram", shape=shape, alerts=len(found),
+                        kinds=kinds, ok=False, error="no channel accepted it")
 
     if not sent:
         print("Could not send. Run `python cli.py notify status`.")

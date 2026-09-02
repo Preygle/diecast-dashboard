@@ -176,7 +176,7 @@ def photo_caption(alert: Any, label: Any = None) -> str:
 
 
 def send_with_photos(tg: Any, alerts_list: list[Any], text: str,
-                     label: Any = None) -> list[str]:
+                     label: Any = None) -> tuple[list[str], str]:
     """Deliver a batch as pictures where possible, text where not.
 
     Titles like "HW Torque Free Wheel" identify nothing; the photo is what
@@ -188,16 +188,20 @@ def send_with_photos(tg: Any, alerts_list: list[Any], text: str,
 
     Any failure falls back to the text digest, because a picture is a nicety
     and a missed restock is not.
+
+    Returns the channels that took it, and the shape that went out, so the
+    send log records what was actually delivered rather than what was planned.
     """
     from . import notify
 
     withpics = [a for a in alerts_list if getattr(a, "image_url", None)]
     sent: list[str] = []
+    parts: list[str] = []
 
     try:
         if not withpics:
             tg.send(text)
-            return ["telegram"]
+            return ["telegram"], "text"
 
         # A batch that fits in one album needs no text message: every caption
         # carries the price, the shop and the link already.
@@ -205,6 +209,7 @@ def send_with_photos(tg: Any, alerts_list: list[Any], text: str,
         if not covers_everything:
             tg.send(text)
             sent.append("telegram")
+            parts.append("text")
 
         batch = withpics[:ALBUM_MAX]
         items = [{"url": notify.thumb_url(a.image_url),
@@ -212,17 +217,20 @@ def send_with_photos(tg: Any, alerts_list: list[Any], text: str,
 
         if len(items) == 1:
             tg.send_photo(items[0]["url"], items[0]["caption"])
+            parts.append("photo")
         else:
             tg.send_album(items)
+            parts.append("album")
         if not sent:
             sent.append("telegram")
-        return sent
+        return sent, "+".join(parts)
     except notify.NotifyError as exc:
         print(f"  photos failed ({exc}); falling back to text")
         if sent:
-            return sent
+            # The digest already went out; only the pictures were lost.
+            return sent, "text"
         tg.send(text)
-        return ["telegram"]
+        return ["telegram"], "text"
 
 
 # ---------------------------------------------------------------- handlers
@@ -264,6 +272,18 @@ def cmd_status(conn: Any, cfg: Any, args: str, labels: dict[str, str]) -> str:
             f"· {_esc(_labels(labels, row['source']))}: {row['listings']} listings, "
             f"cheapest {_rupee(row['cheapest'])}{flag}"
         )
+    log = db.send_summary(conn)
+    if log["last"]:
+        last = log["last"]
+        when = str(last["ts"])[:16].replace("T", " ")
+        mark = "" if last["ok"] else " (FAILED)"
+        lines += ["", f"Last alert sent {when}{mark}",
+                  f"  {_esc(last['kinds'] or last['alerts'])} · {_esc(last['shape'])}",
+                  f"Last {log['days']} days: {log['messages']} message(s), "
+                  f"{log['alerts']} alert(s), {log['failures']} failure(s)"]
+    else:
+        lines += ["", "No alert has been sent yet."]
+
     lines += ["", "Photos " + ("on" if photos_on(conn) else "off")]
     if is_paused(conn):
         lines += [f"<b>Alerts paused</b> until {paused_until(conn):%H:%M UTC}"]

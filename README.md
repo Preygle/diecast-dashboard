@@ -112,6 +112,7 @@ python cli.py regroup                      # re-derive grouping, no re-scrape
 python cli.py top --limit 20               # cheapest finds in the terminal
 python cli.py stats                        # per-shop summary
 python cli.py watch add "treasure hunt" --target 500
+python cli.py watch add "*" --brand Majorette --pack-min 1 --pack-max 1 --target 300
 python cli.py alerts                       # send anything that changed
 python cli.py bot poll                     # answer /commands sent to the bot
 python cli.py bot commands --on pause      # enable a bot command
@@ -311,6 +312,28 @@ re-compresses anyway, so the gain is that it fetches fast and never meets its
 
 Any failure in the picture path falls back to the text digest: a photo is a
 nicety, a missed restock is not. `/photos off` (or the Bot tab) for text only.
+
+### What `target_price` does
+
+It gates **price drops only**. A new listing or a back-in-stock alert fires
+whatever the price, so a rule reading "Hot Wheels · realistic · single ·
+target ₹300" still messages you about a ₹1,495 one when it first appears. The
+target is what a drop is measured against — a listing falling from above it to
+at-or-below it — not a ceiling on the rule.
+
+If you want a ceiling, that is a different change; the rule filters are brand,
+realism, series, pack size, shop and stock.
+
+### Delivery log
+
+`alert_state` records what the watcher *saw*. That is not the same as what it
+*sent*: a run can evaluate cleanly and still fail to deliver, and there was no
+way to tell the two apart — "did it alert me on Tuesday?" could only be
+inferred. `notify_log` records every delivery attempt: when, which channel,
+what shape went out, how many alerts, and whether it succeeded.
+
+`/status` reports the last send and a seven-day tally; the Bot tab shows the
+full table.
 
 ### Muting
 
