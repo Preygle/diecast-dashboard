@@ -25,6 +25,43 @@ jobs:
         run: |
           curl -s https://ipinfo.io/json | head -20 || true
 
+      - name: Raw HTTP - what does the runner actually receive
+        run: |
+          python - <<'PY'
+          import asyncio, httpx, os, yaml
+          UA=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+          cfg=yaml.safe_load(open("config.yaml",encoding="utf-8"))
+          urls=[]
+          for st in cfg["sources"]["shopify"]["stores"]:
+              if st.get("enabled"):
+                  urls.append((st["name"], f"https://{st['domain']}/products.json?limit=5"))
+          urls.append(("firstcry","https://www.firstcry.com/search?q=hot+wheels"))
+
+          async def probe(c,name,u):
+              try:
+                  r=await c.get(u,headers={"User-Agent":UA},timeout=30,follow_redirects=True)
+                  body=r.text[:120].replace("
+"," ")
+                  return f"| {name} | {r.status_code} | {len(r.content)} | `{body[:80]}` |"
+              except Exception as e:
+                  return f"| {name} | ERR | 0 | {type(e).__name__}: {str(e)[:60]} |"
+
+          async def main():
+              async with httpx.AsyncClient(http2=True) as c:
+                  rows=await asyncio.gather(*(probe(c,n,u) for n,u in urls))
+              out="
+".join(["| shop | HTTP | bytes | first bytes |","|---|---|---:|---|"]+rows)
+              print(out)
+              with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+                  f.write("## Raw HTTP from the runner
+
+"+out+"
+
+")
+          asyncio.run(main())
+          PY
+
       - name: Scrape every HTTP shop and report what came back
         env:
           HOTWHEELS_DB: data/probe.db
