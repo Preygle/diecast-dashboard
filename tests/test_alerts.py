@@ -40,6 +40,50 @@ def put(conn, pid, source, sku, price, in_stock):
     })
 
 
+
+def watchlist_sync_checks() -> int:
+    """Rules declared in config must reach an empty database.
+
+    This is what made scheduled runs report nothing: rules lived only in the
+    database, which is not in version control, so a CI runner had none and
+    faithfully found no matches.
+    """
+    fails = 0
+    path = Path(tempfile.mkdtemp()) / "sync.db"
+    rules = [
+        {"note": "mainlines", "query": "*", "brand": "Hot Wheels",
+         "realism": "Realistic", "pack_min": 1, "pack_max": 1,
+         "target_price": 300},
+        {"note": "packs", "query": "*", "brand": "Hot Wheels",
+         "pack_min": 4, "pack_max": 10, "target_price": 900},
+    ]
+
+    with db.session(path) as conn:
+        fails += not check("an empty database gets every declared rule",
+                           alerts.sync_watchlist(conn, rules), 2)
+        fails += not check("and they are active",
+                           len(alerts.active_watches(conn)), 2)
+        fails += not check("running it again changes nothing",
+                           alerts.sync_watchlist(conn, rules), 0)
+
+        edited = [dict(rules[0], target_price=350), rules[1]]
+        fails += not check("an edited rule updates in place",
+                           (alerts.sync_watchlist(conn, edited),
+                            len(alerts.active_watches(conn))), (1, 2))
+        fails += not check("the edit took",
+                           conn.execute("SELECT target_price FROM watchlist "
+                                        "WHERE note = 'mainlines'").fetchone()[0], 350)
+        fails += not check("a rule dropped from config is deactivated, not deleted",
+                           (alerts.sync_watchlist(conn, edited[:1]),
+                            len(alerts.active_watches(conn)),
+                            conn.execute("SELECT COUNT(*) FROM watchlist").fetchone()[0]),
+                           (1, 1, 2))
+        fails += not check("an empty config leaves hand-made rules alone",
+                           (alerts.sync_watchlist(conn, []),
+                            len(alerts.active_watches(conn))), (0, 1))
+    return fails
+
+
 def main() -> int:
     fails = 0
     cfg = config.load()
@@ -131,9 +175,13 @@ def main() -> int:
     msg = alerts.format_message([a])
     fails += not check("title is HTML-escaped", "&lt;Fast &amp; Furious&gt;" in msg, True)
 
+    print("watchlist sync")
+    fails += watchlist_sync_checks()
+
     print(f"\n{'ALL PASS' if not fails else str(fails) + ' FAILURE(S)'}")
     return 1 if fails else 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

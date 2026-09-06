@@ -88,6 +88,54 @@ fast_sources:
   - blueballoon
   - crossword
 
+# Watch rules, kept here rather than only in the database so they survive a
+# machine change and exist on a CI runner at all - a fresh database has no
+# rules, which is why scheduled runs alerted about nothing. `note` is the
+# identity: editing a rule here updates it, removing it deactivates it.
+#
+# target_price gates PRICE DROPS only. A new listing or a restock is reported
+# whatever it costs, subject to max_markup above.
+watchlist:
+- note: cheap realistic mainlines
+  query: '*'
+  target_price: 300.0
+  brand: Hot Wheels
+  realism: Realistic
+  pack_min: 1
+  pack_max: 1
+- note: multipacks
+  query: '*'
+  target_price: 900.0
+  brand: Hot Wheels
+  pack_min: 4
+  pack_max: 10
+- note: Majorette cheap realistic singles
+  query: '*'
+  target_price: 300.0
+  brand: Majorette
+  realism: Realistic
+  pack_min: 1
+  pack_max: 1
+- note: Majorette multipacks
+  query: '*'
+  target_price: 900.0
+  brand: Majorette
+  pack_min: 4
+  pack_max: 10
+- note: Matchbox cheap realistic singles
+  query: '*'
+  target_price: 400.0
+  brand: Matchbox
+  realism: Realistic
+  pack_min: 1
+  pack_max: 1
+- note: Matchbox multipacks
+  query: '*'
+  target_price: 1500.0
+  brand: Matchbox
+  pack_min: 4
+  pack_max: 10
+
 sources:
   amazon_in:
     enabled: false

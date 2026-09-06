@@ -237,3 +237,67 @@ def format_message(alerts: list[Alert], label: Any = None) -> str:
             parts.append(f"...and {len(group) - 10} more")
         parts.append("")
     return "\n".join(parts).strip()
+
+
+# --------------------------------------------------------------------------
+# declarative rules
+# --------------------------------------------------------------------------
+
+WATCH_FIELDS = ("query", "target_price", "brand", "realism", "series",
+                "pack_min", "pack_max", "sources", "stock_only")
+
+
+def sync_watchlist(conn: sqlite3.Connection, rules: list[dict[str, Any]]) -> int:
+    """Make the database's rules match the ones declared in config.
+
+    Watch rules used to live only in the database, which is not in version
+    control - so a fresh checkout, or a CI runner, had none at all and
+    faithfully reported that nothing matched. Declaring them in config.yaml
+    makes them travel with the code.
+
+    `note` is the identity. Editing a rule in config updates it in place, so
+    the alert state keyed to it survives; dropping a rule deactivates it rather
+    than deleting, keeping its history. Rules added by hand through the CLI or
+    dashboard have no counterpart in config and are left alone.
+    """
+    if not rules:
+        return 0
+
+    existing = {r["note"]: r for r in conn.execute(
+        "SELECT * FROM watchlist WHERE note IS NOT NULL"
+    ).fetchall()}
+    declared = {r.get("note") for r in rules if r.get("note")}
+    changed = 0
+
+    for rule in rules:
+        note = rule.get("note")
+        if not note:
+            continue
+        values = {f: rule.get(f) for f in WATCH_FIELDS}
+        values["query"] = values.get("query") or "*"
+        values["stock_only"] = 1 if values.get("stock_only") in (None, True) else 0
+
+        row = existing.get(note)
+        if row is None:
+            cols = ", ".join(["note", *WATCH_FIELDS, "active", "created_at"])
+            marks = ", ".join(["?"] * (len(WATCH_FIELDS) + 3))
+            conn.execute(f"INSERT INTO watchlist ({cols}) VALUES ({marks})",
+                         [note, *[values[f] for f in WATCH_FIELDS], 1, db.now()])
+            changed += 1
+            continue
+
+        same = all(row[f] == values[f] for f in WATCH_FIELDS) and row["active"] == 1
+        if not same:
+            sets = ", ".join(f"{f} = ?" for f in WATCH_FIELDS)
+            conn.execute(f"UPDATE watchlist SET {sets}, active = 1 WHERE id = ?",
+                         [*[values[f] for f in WATCH_FIELDS], row["id"]])
+            changed += 1
+
+    # A rule removed from config stops firing, but its history is kept.
+    for note, row in existing.items():
+        if note not in declared and row["active"]:
+            conn.execute("UPDATE watchlist SET active = 0 WHERE id = ?", (row["id"],))
+            changed += 1
+
+    conn.commit()
+    return changed

@@ -58,8 +58,28 @@ def cmd_alerts(args: argparse.Namespace) -> int:
     labels = source_labels(cfg)
 
     with db.session(cfg.database) as conn:
-        found = alerts.evaluate(conn, region=cfg.region.pincode, seed=args.seed,
+        # Rules declared in config are the source of truth. A CI runner starts
+        # with an empty database and would otherwise have no rules at all,
+        # which reads as "nothing matched" rather than "nothing to match with".
+        synced = alerts.sync_watchlist(conn, cfg.raw.get("watchlist") or [])
+        if synced:
+            print(f"Watchlist: {synced} rule(s) synced from config.")
+
+        # A database with rules but no remembered state has never run. Every
+        # match would look new, which on a fresh CI cache means hundreds of
+        # messages about a catalogue that was already there. Record it instead.
+        first_run = not args.seed and conn.execute(
+            "SELECT NOT EXISTS (SELECT 1 FROM alert_state)"
+        ).fetchone()[0]
+        if first_run:
+            print("No alert state yet - recording the catalogue instead of "
+                  "announcing it. The next run reports changes.")
+
+        found = alerts.evaluate(conn, region=cfg.region.pincode,
+                                seed=args.seed or bool(first_run),
                                 max_markup=cfg.max_markup)
+        if first_run:
+            return 0
         # Muting is applied after evaluation, never before: state has to keep
         # advancing while a shop is quiet, or unmuting would dump every change
         # that happened in the meantime.
