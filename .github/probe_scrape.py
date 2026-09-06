@@ -8,9 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import time
+from pathlib import Path
 
-from hotwheels import config, sources
+# This script lives in .github/, so the repo root is not on sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from hotwheels import config, sources  # noqa: E402
 
 
 async def one(src, queries):
