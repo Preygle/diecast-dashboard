@@ -39,7 +39,7 @@ class WooStore(HttpSource):
 
     async def search(self, query: str) -> list[Item]:
         out: list[Item] = []
-        async with self.client(headers={"Referer": self.base + "/"}) as client:
+        async with self.json_client(headers={"Referer": self.base + "/"}) as client:
             resp = await client.get(
                 f"{self.base}/wp-json/wc/store/v1/products",
                 params={"search": query, "per_page": self.per_page},

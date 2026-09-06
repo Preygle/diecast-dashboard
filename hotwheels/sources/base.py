@@ -154,8 +154,32 @@ class Source:
         return True if price is None else self.within_cap(price)
 
 
+# What a browser sends for a JSON fetch. BASE_HEADERS describes a *document*
+# navigation - `Accept: text/html`, `Sec-Fetch-Dest: document` - and sending
+# that to a JSON endpoint invites the server to content-negotiate and hand
+# back the HTML storefront instead. Shopify's edge does exactly that for
+# datacentre clients: the same /products.json request returns 660KB of JSON
+# with these headers and 37KB of HTML with the document ones.
+JSON_HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
+}
+
+
 class HttpSource(Source):
     """Adapter backed by plain HTTP requests."""
+
+    def json_client(self, **kw: Any) -> httpx.AsyncClient:
+        """A client for API endpoints. Use this for anything returning JSON."""
+        headers = dict(JSON_HEADERS)
+        headers.update(kw.pop("headers", {}))
+        client = self.client(headers=headers, **kw)
+        # Only meaningful on a document navigation.
+        client.headers.pop("Sec-Fetch-User", None)
+        client.headers.pop("Upgrade-Insecure-Requests", None)
+        return client
 
     def client(self, **kw: Any) -> httpx.AsyncClient:
         headers = dict(BASE_HEADERS)

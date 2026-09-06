@@ -69,7 +69,7 @@ class ShopifyStore(HttpSource):
 
     async def _catalog(self) -> list[Item]:
         out: dict[str, Item] = {}
-        async with self.client(headers={"Referer": self.base + "/"}) as client:
+        async with self.json_client(headers={"Referer": self.base + "/"}) as client:
             for page in range(1, self.max_pages + 1):
                 url = f"{self.base}/products.json?limit=250&page={page}"
                 try:
@@ -83,6 +83,14 @@ class ShopifyStore(HttpSource):
                 try:
                     products = resp.json().get("products", [])
                 except Exception:
+                    # A 200 that is not JSON means the edge served the HTML
+                    # storefront instead of the API - a content-negotiation or
+                    # bot-check answer. Silence here hid exactly that for a
+                    # long time, so say it out loud.
+                    ctype = resp.headers.get("content-type", "?")
+                    print(f"  [{self.name}] page {page}: HTTP 200 but "
+                          f"{ctype}, not JSON ({len(resp.content):,}b) - "
+                          f"the shop served a page, not the API")
                     break
                 if not products:
                     break
@@ -102,7 +110,7 @@ class ShopifyStore(HttpSource):
 
     async def search(self, query: str) -> list[Item]:
         out: list[Item] = []
-        async with self.client(headers={"Referer": self.base + "/"}) as client:
+        async with self.json_client(headers={"Referer": self.base + "/"}) as client:
             resp = await client.get(
                 f"{self.base}/search/suggest.json",
                 params={
