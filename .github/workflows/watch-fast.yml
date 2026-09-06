@@ -1,11 +1,12 @@
-name: Watch (marketplaces)
+name: Watch (fast)
 
-# Every 5 minutes for the HTTP-only shops. These need no browser, so a run
-# takes well under a minute.
+# The watched brands at the shops that stock them near MRP. About a minute,
+# so it fits comfortably inside the schedule.
 #
 # GitHub's scheduled triggers are best-effort: under load they run late or are
 # skipped entirely, and */5 is the platform minimum. Treat this as "roughly
-# every 5-15 minutes", not a guarantee.
+# every 5-15 minutes", not a guarantee. A machine you control will always be
+# punctual; this one is free and does not run on your laptop.
 on:
   schedule:
     - cron: "*/5 * * * *"
@@ -28,6 +29,9 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      # The brotli and zstd extras matter: without a decoder for what these
+      # shops send, every response arrives as unreadable bytes behind a
+      # perfectly good 200.
       - run: pip install -r requirements.txt
 
       # The database carries alert_state. Without it every run would look like
@@ -39,10 +43,10 @@ jobs:
           key: diecast-db-${{ github.run_id }}
           restore-keys: diecast-db-
 
-      - name: Scrape marketplaces
+      - name: Scrape
         env:
           HOTWHEELS_DB: data/hotwheels.db
-        run: python cli.py scrape --only blueballoon funcorp toymarche crossword
+        run: python cli.py scrape --fast
 
       - name: Send alerts
         env:
@@ -51,6 +55,13 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python cli.py alerts
+
+      - name: Answer bot commands
+        env:
+          HOTWHEELS_DB: data/hotwheels.db
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python cli.py bot poll
 
       - name: Save database
         if: always()

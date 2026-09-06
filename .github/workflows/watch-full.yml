@@ -1,0 +1,54 @@
+name: Watch (full sweep)
+
+# Every enabled shop, every query. Catches the long-tail collector marques the
+# fast cycle does not ask about. Offset from :00 so it does not start in the
+# same minute as a fast run and rate-limit it.
+on:
+  schedule:
+    - cron: "11,31,51 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: watch-full
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore database
+        uses: actions/cache/restore@v4
+        with:
+          path: data/hotwheels.db
+          key: diecast-db-${{ github.run_id }}
+          restore-keys: diecast-db-
+
+      - name: Scrape every shop
+        env:
+          HOTWHEELS_DB: data/hotwheels.db
+        run: python cli.py scrape
+
+      - name: Send alerts
+        env:
+          HOTWHEELS_DB: data/hotwheels.db
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python cli.py alerts
+
+      - name: Save database
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/hotwheels.db
+          key: diecast-db-${{ github.run_id }}
