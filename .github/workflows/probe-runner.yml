@@ -6,6 +6,11 @@ name: Probe (which shops answer a GitHub runner)
 # summary, delete the workflow when the question is settled.
 on:
   workflow_dispatch:
+    inputs:
+      raw:
+        description: "Also probe raw HTTP (rate-limits the scrape that follows)"
+        required: false
+        default: "0" 
 
 jobs:
   probe:
@@ -24,7 +29,12 @@ jobs:
       - name: Where is this runner
         run: curl -s https://ipinfo.io/json | head -20 || true
 
+      # Deliberately not running probe_raw.py in the same job any more: it
+      # fires ~45 requests at these shops seconds beforehand, and Shopify then
+      # rate-limits the real scrape. Run it separately if the raw view is
+      # needed. RAW=1 opts back in.
       - name: Raw HTTP - what does the runner actually receive
+        if: ${{ github.event.inputs.raw == '1' }}
         run: python .github/probe_raw.py
 
       - name: Scrape every HTTP shop and report what came back
