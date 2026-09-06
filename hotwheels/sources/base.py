@@ -45,7 +45,11 @@ BASE_HEADERS = {
     "User-Agent": UA,
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-IN,en-GB;q=0.9,en;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
+    # Accept-Encoding is deliberately absent. httpx sets it from the codecs it
+    # can actually decode; hardcoding "gzip, deflate, br" promised brotli on a
+    # machine without the decoder, so servers sent brotli and every response
+    # became unparseable - a 200 with the right content-type and a body we
+    # could not read. Never advertise a capability the client may not have.
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
     "Sec-Fetch-Dest": "document",
