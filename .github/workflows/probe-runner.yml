@@ -22,76 +22,12 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Where is this runner
-        run: |
-          curl -s https://ipinfo.io/json | head -20 || true
+        run: curl -s https://ipinfo.io/json | head -20 || true
 
       - name: Raw HTTP - what does the runner actually receive
-        run: |
-          python - <<'PY'
-          import asyncio, httpx, os, yaml
-          UA=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-              "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-          cfg=yaml.safe_load(open("config.yaml",encoding="utf-8"))
-          urls=[]
-          for st in cfg["sources"]["shopify"]["stores"]:
-              if st.get("enabled"):
-                  urls.append((st["name"], f"https://{st['domain']}/products.json?limit=5"))
-          urls.append(("firstcry","https://www.firstcry.com/search?q=hot+wheels"))
-
-          async def probe(c,name,u):
-              try:
-                  r=await c.get(u,headers={"User-Agent":UA},timeout=30,follow_redirects=True)
-                  body=r.text[:120].replace("
-"," ")
-                  return f"| {name} | {r.status_code} | {len(r.content)} | `{body[:80]}` |"
-              except Exception as e:
-                  return f"| {name} | ERR | 0 | {type(e).__name__}: {str(e)[:60]} |"
-
-          async def main():
-              async with httpx.AsyncClient(http2=True) as c:
-                  rows=await asyncio.gather(*(probe(c,n,u) for n,u in urls))
-              out="
-".join(["| shop | HTTP | bytes | first bytes |","|---|---|---:|---|"]+rows)
-              print(out)
-              with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
-                  f.write("## Raw HTTP from the runner
-
-"+out+"
-
-")
-          asyncio.run(main())
-          PY
+        run: python .github/probe_raw.py
 
       - name: Scrape every HTTP shop and report what came back
         env:
           HOTWHEELS_DB: data/probe.db
-        run: |
-          python - <<'PY'
-          import asyncio, os, time
-          from hotwheels import config, sources
-
-          cfg = config.load("config.yaml")
-
-          async def one(s):
-              t = time.time()
-              try:
-                  items = await s.collect(cfg.fast_queries)
-                  return s.name, len(items), f"{time.time()-t:.0f}s", ""
-              except Exception as exc:
-                  return s.name, 0, f"{time.time()-t:.0f}s", f"{type(exc).__name__}: {exc}"[:70]
-
-          async def main():
-              srcs = [s for s in sources.build_sources(cfg) if s.name != "blinkit"]
-              rows = await asyncio.gather(*(one(s) for s in srcs))
-              lines = ["| shop | items | time | error |", "|---|---:|---|---|"]
-              total = 0
-              for name, n, dur, err in sorted(rows, key=lambda r: -r[1]):
-                  total += n
-                  lines.append(f"| {name} | {n} | {dur} | {err or ''} |")
-              lines.append(f"\n**{total} items total across {len(rows)} shops.**")
-              out = "\n".join(lines)
-              print(out)
-              with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
-                  f.write("## Shops reachable from a GitHub runner\n\n" + out + "\n")
-          asyncio.run(main())
-          PY
+        run: python .github/probe_scrape.py
