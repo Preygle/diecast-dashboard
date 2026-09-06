@@ -343,24 +343,60 @@ def watchlist(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 # markup guard
 # --------------------------------------------------------------------------
 #
-# A shop's stated MRP is not a ceiling: 372 of 374 listings sit at or under
-# their own, because shops set MRP to whatever they are charging. Comparing
-# price to `listings.mrp` therefore passes everything and guards nothing.
+# What an item *should* cost cannot be inferred from what shops charge for it.
+# Two attempts failed on real data:
 #
-# What does work is the catalogue's own view of what a class of thing costs.
-# Hot Wheels mainline singles cluster hard on Rs 179 (the real MRP), Premium
-# on Rs 626, Tomica on Rs 449 - so the median price of everything sharing a
-# (brand, series, pack size) is a good stand-in for "what this should cost",
-# and it maintains itself as the market moves.
+#   stated MRP   372 of 374 listings sit at or under their own, because shops
+#                set the MRP field to whatever they are charging.
+#   the median   of Hot Wheels mainline singles was Rs 179 across four shops
+#                and Rs 499 across seventeen. Adding shops that sell above MRP
+#                moved it, because a median measures the market, not the price.
+#                The mode moved too: Rs 499 appears 102 times, Rs 179 only 62.
+#
+# A contaminated sample stays contaminated however it is averaged. So MRP is
+# declared in config instead - it is a printed number, known to the buyer, and
+# it does not drift. A class with no declared MRP falls back to a low
+# percentile of live prices, which is a guess and is documented as one.
 
-# Below this many comparable listings the median is noise, not a baseline,
-# and nothing is judged - a thin class must not produce false rejections.
-MIN_SAMPLE = 5
+# Below this many comparable listings even the fallback is noise, and nothing
+# is judged - a thin class must not produce false rejections.
+MIN_SAMPLE = 8
+
+# Percentile used when no MRP is declared. Low, because legitimate MRP-priced
+# sellers are the cheap tail of a market that mostly sells above MRP.
+FALLBACK_PCT = 0.10
 
 
-def price_baselines(conn: sqlite3.Connection,
-                    region: str | None = None) -> dict[tuple, float]:
-    """Median in-stock price for each (brand, series, pack_size) class."""
+def _percentile(values: list[float], q: float) -> float:
+    ordered = sorted(values)
+    return ordered[min(int(len(ordered) * q), len(ordered) - 1)]
+
+
+def declared_mrp(cfg_mrp: dict[str, Any], brand: str | None,
+                 series: str | None) -> float | None:
+    """The printed MRP for one car of this kind, if config states it.
+
+    `Brand/Series` wins over `Brand`, so a Premium is judged against Premium
+    money rather than against a basic mainline.
+    """
+    if not cfg_mrp or not brand:
+        return None
+    if series:
+        exact = cfg_mrp.get(f"{brand}/{series}")
+        if exact:
+            return float(exact)
+    plain = cfg_mrp.get(brand)
+    return float(plain) if plain else None
+
+
+def price_baselines(conn: sqlite3.Connection, region: str | None = None,
+                    cfg_mrp: dict[str, Any] | None = None) -> dict[tuple, float]:
+    """What one of each (brand, series, pack_size) ought to cost.
+
+    A declared MRP is multiplied by the pack size: diecast multipacks price at
+    roughly the single rate per car, so a five-pack of Rs 179 cars comes to
+    about Rs 895 - which is what they sell for.
+    """
     rc, rp = _region_clause(region)
     rows = conn.execute(
         f"""SELECT p.brand, p.series, p.pack_size, l.price
@@ -375,20 +411,21 @@ def price_baselines(conn: sqlite3.Connection,
 
     out: dict[tuple, float] = {}
     for key, prices in buckets.items():
-        if len(prices) >= MIN_SAMPLE:
-            prices.sort()
-            mid = len(prices) // 2
-            out[key] = (prices[mid] if len(prices) % 2
-                        else (prices[mid - 1] + prices[mid]) / 2)
+        brand, series, pack = key
+        mrp = declared_mrp(cfg_mrp or {}, brand, series)
+        if mrp is not None:
+            out[key] = mrp * max(int(pack or 1), 1)
+        elif len(prices) >= MIN_SAMPLE:
+            out[key] = _percentile(prices, FALLBACK_PCT)
     return out
 
 
 def markup_of(price: float | None, brand: str | None, series: str | None,
               pack_size: int | None,
               baselines: dict[tuple, float]) -> float | None:
-    """How far above its class this price sits, or None when unjudgeable.
+    """How far above MRP this price sits, or None when unjudgeable.
 
-    0.0 means at or below the class median; 0.25 means a quarter over.
+    0.0 means at or below MRP; 0.25 means a quarter over.
     """
     if price is None or price <= 0:
         return None

@@ -154,7 +154,8 @@ def _remember(conn: sqlite3.Connection, watch_id: int, m: dict[str, Any]) -> Non
 
 def evaluate(conn: sqlite3.Connection, *, region: str | None = None,
              seed: bool = False,
-             max_markup: float | None = None) -> list[Alert]:
+             max_markup: float | None = None,
+             mrp: dict[str, float] | None = None) -> list[Alert]:
     """Compare the catalogue against remembered state and return transitions.
 
     Always updates state, whether or not anything is emitted - otherwise the
@@ -165,7 +166,8 @@ def evaluate(conn: sqlite3.Connection, *, region: str | None = None,
     from . import queries
 
     out: list[Alert] = []
-    baselines = queries.price_baselines(conn, region) if max_markup is not None else {}
+    baselines = (queries.price_baselines(conn, region, mrp)
+                 if max_markup is not None else {})
 
     for watch in active_watches(conn):
         prior = _prior(conn, watch["id"])

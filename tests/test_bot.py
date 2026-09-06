@@ -208,31 +208,55 @@ def main() -> int:
                     [r["shape"] for r in db.recent_sends(conn)], ["text", "album"])
 
     print("markup guard")
-    # A shop's stated MRP is not a ceiling, so the baseline is the median of
-    # the class. Build one directly rather than depending on live data.
-    base = {("Hot Wheels", None, 1): 179.0, ("Hot Wheels", "Premium", 1): 626.0}
+    # MRP is declared, not inferred. Inferring it from live listings is what
+    # broke: the median of Hot Wheels mainline singles read Rs 179 across four
+    # shops and Rs 499 across seventeen, so the guard quietly started accepting
+    # a Rs 499 mainline as normal.
+    declared = {"Hot Wheels": 179.0, "Hot Wheels/Premium": 549.0,
+                "Matchbox": 199.0}
+    ok &= check("brand MRP is used",
+                queries.declared_mrp(declared, "Hot Wheels", None), 179.0)
+    ok &= check("Brand/Series beats Brand",
+                queries.declared_mrp(declared, "Hot Wheels", "Premium"), 549.0)
+    ok &= check("a series with no entry falls back to the brand",
+                queries.declared_mrp(declared, "Hot Wheels", "Mainline"), 179.0)
+    ok &= check("an undeclared brand has no MRP",
+                queries.declared_mrp(declared, "Tomica", None), None)
+
+    base = {("Hot Wheels", None, 1): 179.0,
+            ("Hot Wheels", "Premium", 1): 549.0,
+            ("Hot Wheels", None, 5): 895.0}
     cases = [
-        (164, "Hot Wheels", None, 1, 0.0, "under the median reads as no markup"),
-        (179, "Hot Wheels", None, 1, 0.0, "at the median is no markup"),
-        (223.75, "Hot Wheels", None, 1, 0.25, "a quarter over reads as 0.25"),
-        (224, "Hot Wheels", None, 1, 0.2514, "Rs 224 is just past the 0.25 line"),
-        (358, "Hot Wheels", None, 1, 1.0, "double the median reads as 1.0"),
+        (150, None, 1, 0.0, "below MRP is no markup"),
+        (179, None, 1, 0.0, "at MRP is no markup"),
+        (199, None, 1, 0.1117, "Rs 199 on a Rs 179 car is a little over"),
+        (499, None, 1, 1.7877, "Rs 499 on a Rs 179 car is extreme"),
+        (549, "Premium", 1, 0.0, "a Premium is judged against Premium money"),
+        (899, None, 5, 0.0045, "a five-pack is judged at five times MRP"),
     ]
-    for price, brand, series, pack, want, why in cases:
-        got = queries.markup_of(price, brand, series, pack, base)
+    for price, series, pack, want, why in cases:
+        got = queries.markup_of(price, "Hot Wheels", series, pack, base)
         ok &= check(why, round(got, 4) if got is not None else None, want)
 
-    ok &= check("a Premium is judged against Premiums, not mainlines",
-                round(queries.markup_of(626, "Hot Wheels", "Premium", 1, base), 4), 0.0)
+    print("  (the cap decides what that means)")
+    for price, cap, want, why in [
+        (199, 0.25, True, "Rs 199 alerts at a 25% cap"),
+        (224, 0.25, False, "Rs 224 is just past a 25% cap"),
+        (499, 0.25, False, "Rs 499 never alerts at a 25% cap"),
+        (499, 2.0, True, "a 200% cap would let Rs 499 through"),
+    ]:
+        mk = queries.markup_of(price, "Hot Wheels", None, 1, base)
+        ok &= check(why, mk <= cap, want)
+
     ok &= check("an unknown class is not judged",
                 queries.markup_of(999, "Tomica", None, 1, base), None)
     ok &= check("a missing price is not judged",
                 queries.markup_of(None, "Hot Wheels", None, 1, base), None)
 
-    print("  (thin classes are never judged)")
+    print("  (a thin, undeclared class is never judged)")
     with db.session(cfg.database) as conn:
-        thin = queries.price_baselines(conn)
-        ok &= check("an empty catalogue yields no baselines", thin, {})
+        ok &= check("an empty catalogue yields no baselines",
+                    queries.price_baselines(conn, None, {}), {})
 
     print("keep policy")
     cases = [

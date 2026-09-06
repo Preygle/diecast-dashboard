@@ -77,7 +77,7 @@ def cmd_alerts(args: argparse.Namespace) -> int:
 
         found = alerts.evaluate(conn, region=cfg.region.pincode,
                                 seed=args.seed or bool(first_run),
-                                max_markup=cfg.max_markup)
+                                max_markup=cfg.max_markup, mrp=cfg.mrp)
         if first_run:
             return 0
         # Muting is applied after evaluation, never before: state has to keep

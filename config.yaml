@@ -88,6 +88,39 @@ fast_sources:
   - blueballoon
   - crossword
 
+# Printed MRP for ONE car, in rupees. Declared rather than inferred, because a
+# statistic of live listings measures what shops charge, not what the thing
+# costs: the median of Hot Wheels mainline singles was Rs 179 across four shops
+# and Rs 499 across seventeen. Adding shops that sell above MRP moved it.
+#
+# `Brand/Series` beats `Brand`, so a Premium is judged against Premium money.
+# A multipack's baseline is this times the pack size - diecast packs price at
+# roughly the single rate per car.
+#
+# Correct any of these and the guard follows immediately; nothing is cached.
+# A brand not listed here falls back to a low percentile of live prices, which
+# is only a guess.
+mrp:
+  Hot Wheels: 179              # the basic mainline single
+  "Hot Wheels/Premium": 549
+  "Hot Wheels/Car Culture": 649
+  "Hot Wheels/Monster Trucks": 249
+  "Hot Wheels/Track Set": 999
+  Matchbox: 199
+  Majorette: 199
+  "Majorette/Premium": 299
+  Tomica: 499
+  Bburago: 499
+  Maisto: 799
+  Greenlight: 799
+  "Mini GT": 1099
+  "M2 Machines": 1199
+  "Tarmac Works": 1499
+  "Pop Race": 1599
+  "Auto World": 999
+  "Johnny Lightning": 999
+
+
 # Watch rules, kept here rather than only in the database so they survive a
 # machine change and exist on a CI runner at all - a fresh database has no
 # rules, which is why scheduled runs alerted about nothing. `note` is the

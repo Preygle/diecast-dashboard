@@ -322,32 +322,55 @@ And the fast tier stopped asking every shop about every collector marque:
 
 ## Cross-checking the price
 
-A shop's stated MRP is not a ceiling. **372 of 374 listings sit at or under
-their own stated MRP**, because shops set the MRP field to whatever they are
-charging — so comparing `price` to `mrp` passes everything and guards nothing.
+MRP is a **printed number**. It cannot be inferred from what shops charge, and
+two attempts to do so both failed on real data:
 
-What works is the catalogue's own view of what a class of thing costs:
+**Stated MRP.** 372 of 374 listings sit at or under their own, because shops
+set the MRP field to whatever they are charging. Comparing `price` to `mrp`
+passes everything.
 
-| Class | Median |
-|---|---|
-| Hot Wheels mainline single | **₹179** |
-| Hot Wheels Premium single | ₹626 |
-| Hot Wheels Monster Trucks single | ₹549 |
-| Majorette Premium single | ₹359 |
-| Tomica single | ₹449 |
+**The market median.** Worked at four shops and broke at seventeen. The median
+Hot Wheels mainline single was ₹179 with the original shops and **₹499** once
+fifteen general toy retailers were added — so the guard quietly began accepting
+a ₹499 mainline as normal. The mode moved too (₹499 appears 102 times, ₹179
+only 62). A contaminated sample stays contaminated however it is averaged;
+central tendency measures what shops charge, not what the thing costs.
 
-`max_markup` is how far over that median an item may sit and still be worth a
-message. At `0.25` a ₹179 mainline alerts up to about ₹224 — a little over is
-fine — and a ₹358 one (100% over) is not sent.
+So MRP is declared in `config.yaml`:
 
-A class needs at least five in-stock listings before it is trusted as a
-baseline; below that nothing is judged, so a thin brand never produces false
-rejections. Judging happens against the item's own class, so a genuinely
-expensive Premium is not mistaken for an overpriced mainline.
+```yaml
+mrp:
+  Hot Wheels: 179              # the basic mainline single
+  "Hot Wheels/Premium": 549
+  Matchbox: 199
+  Tomica: 499
+```
+
+`Brand/Series` beats `Brand`, so a Premium is judged against Premium money
+rather than against a mainline. A multipack's baseline is the single MRP times
+the pack size — diecast packs price at roughly the single rate per car, which
+puts a Hot Wheels five-pack at ₹895 against a real ₹899.
+
+`max_markup` is how far over that an item may sit and still be worth a message:
+
+| Price of a ₹179 mainline | Over MRP | At `max_markup: 0.25` |
+|---:|---:|---|
+| ₹179 | 0% | alert |
+| ₹199 | 11% | alert |
+| ₹224 | 25% | reject |
+| ₹358 | 100% | reject |
+| ₹499 | 179% | reject |
+
+Against the live catalogue that is 337 alerts kept and 1,339 overpriced
+listings rejected.
+
+A brand with no declared MRP falls back to a low percentile of live prices,
+which is a guess and is documented as one; a class thinner than eight in-stock
+listings is not judged at all, so a rare brand never produces false rejections.
 
 Like muting, this suppresses **delivery only**. The listing is still stored,
 still shown in the dashboard for comparison, and still remembered — so if it
-later drops to a sane price you hear about the drop rather than nothing.
+later drops to a sane price you hear about the drop.
 
 ---
 

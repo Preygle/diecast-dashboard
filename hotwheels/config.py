@@ -31,6 +31,8 @@ class Config:
     exclude_fantasy: bool
     # None disables the guard entirely.
     max_markup: float | None
+    # Printed MRP per single car, keyed 'Brand' or 'Brand/Series'.
+    mrp: dict[str, float]
     queries: list[str]
     fast_queries: list[str]
     fast_sources: list[str]
@@ -75,6 +77,7 @@ def load(path: str | os.PathLike[str] | None = None) -> Config:
         currency=data.get("currency", "INR"),
         exclude_fantasy=bool(data.get("exclude_fantasy", False)),
         max_markup=(float(mk) if (mk := data.get("max_markup")) is not None else None),
+        mrp={str(k): float(v) for k, v in (data.get("mrp") or {}).items()},
         queries=list(data.get("queries", ["hot wheels"])),
         # Falling back to the full list keeps a config without this key working.
         fast_queries=list(data.get("fast_queries")
