@@ -147,8 +147,14 @@ sources:
     enabled: true
     # 20 products per page; Hot Wheels alone is ~290, so 15 covers it.
     max_pages: 15
+  # Off. Blinkit is the only browser-driven source, and it cannot run on CI:
+  # the catalogue is scoped to a delivery address held in a persistent Chromium
+  # profile, and a fresh runner outside India captures no catalog JSON at all.
+  # Keeping it on meant a headless Chromium running on a personal machine
+  # around the clock, which is not worth ~10 in-stock listings out of 3,700.
+  # Re-enable only if you are content to scrape locally again.
   blinkit:
-    enabled: true
+    enabled: false
   instamart:
     enabled: false
   zepto:

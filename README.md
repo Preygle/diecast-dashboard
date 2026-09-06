@@ -262,6 +262,42 @@ already on disk.
 
 ---
 
+## Where it runs
+
+**On GitHub Actions, not on your machine.** `watch-fast` runs every 5 minutes;
+`watch-full` sweeps every shop three times an hour. The database travels
+between runs in the actions cache, because `alert_state` is what stops every
+run re-announcing the whole catalogue.
+
+Two things had to be fixed before this worked, and both had been misdiagnosed
+as the shops geo-blocking datacentre IPs:
+
+**We promised brotli we could not decode.** `BASE_HEADERS` hardcoded
+`Accept-Encoding: gzip, deflate, br` while `requirements.txt` pinned
+`httpx[http2]`, which ships no brotli decoder — it was present locally only
+because another dependency happened to pull it in. So on a clean machine every
+shop was told we could read brotli, every shop obliged, and every response came
+back as 37KB of unreadable bytes behind a perfectly good `200 application/json`.
+`Accept-Encoding` is now absent, so httpx advertises exactly what it has, and
+the brotli and zstd extras are required so it has them.
+
+**CI had no watch rules.** They lived only in the database, which is
+gitignored. A runner started with an empty watchlist and correctly reported
+that nothing matched — the same silence as a broken scraper, for a different
+reason. Rules are now declared in `config.yaml` and synced on every run.
+
+What that costs: GitHub's cron is best-effort and runs late or is skipped under
+load, so treat "every 5 minutes" as "roughly every 5–15". A machine you control
+is punctual; this one is free and does not run on your laptop.
+
+**Blinkit is off.** It was the only browser-driven source and cannot run on CI:
+its catalogue is scoped to a delivery address held in a persistent Chromium
+profile, and a runner outside India captures no catalogue at all. It was also
+the headless Chromium running on a personal machine around the clock. Ten
+in-stock listings out of ~3,700 was not worth that.
+
+---
+
 ## How fast an alert reaches you
 
 Polling has a floor, and the honest number is the cycle length plus the gap
@@ -272,7 +308,6 @@ takes about two minutes and is the wrong thing to run at speed:
 |---|---|---|---|
 | **fast** | 2 min | `fast_sources` × `fast_queries` — the watched brands at the shops that stock them near MRP | ~35s |
 | **full** | 20 min | every enabled shop, every query | ~2 min |
-| **blinkit** | 1 hour | quick-commerce, browser-driven | ~5 min |
 
 Worst case on the fast tier is therefore under three minutes from a listing
 appearing to a message arriving, against about seven and a half before.
