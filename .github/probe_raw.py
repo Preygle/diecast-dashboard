@@ -57,7 +57,12 @@ async def main() -> None:
             adapter = await hit(client,
                                 f"https://{dom}/products.json?limit=250&page=1",
                                 {**BASE_HEADERS, "Referer": f"https://{dom}/"})
-            rows.append(f"| {name} | {naive} | {adapter} |")
+            # Same big request, but asking for JSON instead of announcing
+            # `Accept: text/html`. Isolates our headers from the IP.
+            big_json = await hit(client,
+                                 f"https://{dom}/products.json?limit=250&page=1",
+                                 {"User-Agent": PLAIN_UA, "Accept": "application/json"})
+            rows.append(f"| {name} | {naive} | {adapter} | {big_json} |")
 
     out = "\n".join(["| shop | limit=5, plain UA | limit=250&page=1, adapter headers |",
                      "|---|---|---|"] + rows)
