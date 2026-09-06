@@ -1,0 +1,60 @@
+name: Probe (which shops answer a GitHub runner)
+
+# One-off diagnostic. Indian shops may serve an empty catalogue, a challenge
+# page, or a geo-block to a datacentre IP outside India, and the only way to
+# know which is to ask from the runner itself. Run it by hand, read the
+# summary, delete the workflow when the question is settled.
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Where is this runner
+        run: |
+          curl -s https://ipinfo.io/json | head -20 || true
+
+      - name: Scrape every HTTP shop and report what came back
+        env:
+          HOTWHEELS_DB: data/probe.db
+        run: |
+          python - <<'PY'
+          import asyncio, os, time
+          from hotwheels import config, sources
+
+          cfg = config.load("config.yaml")
+
+          async def one(s):
+              t = time.time()
+              try:
+                  items = await s.collect(cfg.fast_queries)
+                  return s.name, len(items), f"{time.time()-t:.0f}s", ""
+              except Exception as exc:
+                  return s.name, 0, f"{time.time()-t:.0f}s", f"{type(exc).__name__}: {exc}"[:70]
+
+          async def main():
+              srcs = [s for s in sources.build_sources(cfg) if s.name != "blinkit"]
+              rows = await asyncio.gather(*(one(s) for s in srcs))
+              lines = ["| shop | items | time | error |", "|---|---:|---|---|"]
+              total = 0
+              for name, n, dur, err in sorted(rows, key=lambda r: -r[1]):
+                  total += n
+                  lines.append(f"| {name} | {n} | {dur} | {err or ''} |")
+              lines.append(f"\n**{total} items total across {len(rows)} shops.**")
+              out = "\n".join(lines)
+              print(out)
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+                  f.write("## Shops reachable from a GitHub runner\n\n" + out + "\n")
+          asyncio.run(main())
+          PY
