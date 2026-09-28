@@ -264,37 +264,38 @@ already on disk.
 
 ## Where it runs
 
-**On GitHub Actions, not on your machine.** `watch-fast` runs every 5 minutes;
-`watch-full` sweeps every shop three times an hour. The database travels
-between runs in the actions cache, because `alert_state` is what stops every
-run re-announcing the whole catalogue.
+**On this machine, because quick-commerce cannot be scraped anywhere else.**
 
-Two things had to be fixed before this worked, and both had been misdiagnosed
-as the shops geo-blocking datacentre IPs:
+Every enabled source is an instant-delivery app — Blinkit, Instamart, Zepto,
+BigBasket — and all four are browser-driven, scoped to a delivery address held
+in a persistent Chromium profile, and served only to Indian clients. None of it
+survives a GitHub runner. Tested, not assumed: Blinkit captured no catalogue
+JSON from a runner and BigBasket answered `Access Denied`.
 
-**We promised brotli we could not decode.** `BASE_HEADERS` hardcoded
-`Accept-Encoding: gzip, deflate, br` while `requirements.txt` pinned
-`httpx[http2]`, which ships no brotli decoder — it was present locally only
-because another dependency happened to pull it in. So on a clean machine every
-shop was told we could read brotli, every shop obliged, and every response came
-back as 37KB of unreadable bytes behind a perfectly good `200 application/json`.
-`Accept-Encoding` is now absent, so httpx advertises exactly what it has, and
-the brotli and zstd extras are required so it has them.
+So `DiecastWatchQuickCom` runs every 5 minutes locally. The GitHub workflows
+are kept but their schedules are commented out; they work for HTTP shops and can
+be restored if those are ever re-enabled.
 
-**CI had no watch rules.** They lived only in the database, which is
-gitignored. A runner started with an empty watchlist and correctly reported
-that nothing matched — the same silence as a broken scraper, for a different
-reason. Rules are now declared in `config.yaml` and synced on every run.
+This is the trade the project cannot avoid: a case drop at MRP appears on these
+apps and sells out in minutes, and reaching them means running where an Indian
+browser session lives.
 
-What that costs: GitHub's cron is best-effort and runs late or is skipped under
-load, so treat "every 5 minutes" as "roughly every 5–15". A machine you control
-is punctual; this one is free and does not run on your laptop.
+### One-time unlock per shop
 
-**Blinkit is off.** It was the only browser-driven source and cannot run on CI:
-its catalogue is scoped to a delivery address held in a persistent Chromium
-profile, and a runner outside India captures no catalogue at all. It was also
-the headless Chromium running on a personal machine around the clock. Ten
-in-stock listings out of ~3,700 was not worth that.
+Three of the four bind their catalogue to an address chosen in their own UI, and
+two put a bot challenge in front of a fresh session. Each needs solving once, in
+a visible window; the saved profile carries it forward:
+
+```bash
+python cli.py setup zepto        # pick the delivery address
+python cli.py setup instamart    # solve the AWS WAF challenge, set the address
+python cli.py setup bigbasket    # clear Akamai, set the city and address
+```
+
+Blinkit needs none — it takes coordinates from cookies.
+
+Until a shop is set up it reports plainly what is missing rather than returning
+an empty catalogue that looks like "nothing in stock".
 
 ---
 

@@ -73,101 +73,14 @@ fast_queries:
   - "matchbox"
   - "majorette"
 
-# Shops polled on the fast cycle: the ones that actually stock mainlines at or
-# near MRP, so a restock there is something you would buy. The rest are found
-# by the full sweep. Leave empty to poll every enabled shop.
+# Shops polled on the fast cycle. All four, because quick-commerce is the whole
+# point now - these are the only places a case drop appears at MRP and sells out
+# in minutes.
 fast_sources:
-  - firstcry
-  - toymarche
-  - funcorp
-  - kinderlogs
-  - krazycaterpillar
-  - giftgalaxy
-  - itsfun
-  - zoomsters
-  - blueballoon
-  - crossword
-
-# Printed MRP for ONE car, in rupees. Declared rather than inferred, because a
-# statistic of live listings measures what shops charge, not what the thing
-# costs: the median of Hot Wheels mainline singles was Rs 179 across four shops
-# and Rs 499 across seventeen. Adding shops that sell above MRP moved it.
-#
-# `Brand/Series` beats `Brand`, so a Premium is judged against Premium money.
-# A multipack's baseline is this times the pack size - diecast packs price at
-# roughly the single rate per car.
-#
-# Correct any of these and the guard follows immediately; nothing is cached.
-# A brand not listed here falls back to a low percentile of live prices, which
-# is only a guess.
-mrp:
-  Hot Wheels: 179              # the basic mainline single
-  "Hot Wheels/Premium": 549
-  "Hot Wheels/Car Culture": 649
-  "Hot Wheels/Monster Trucks": 249
-  "Hot Wheels/Track Set": 999
-  Matchbox: 199
-  Majorette: 199
-  "Majorette/Premium": 299
-  Tomica: 499
-  Bburago: 499
-  Maisto: 799
-  Greenlight: 799
-  "Mini GT": 1099
-  "M2 Machines": 1199
-  "Tarmac Works": 1499
-  "Pop Race": 1599
-  "Auto World": 999
-  "Johnny Lightning": 999
-
-
-# Watch rules, kept here rather than only in the database so they survive a
-# machine change and exist on a CI runner at all - a fresh database has no
-# rules, which is why scheduled runs alerted about nothing. `note` is the
-# identity: editing a rule here updates it, removing it deactivates it.
-#
-# target_price gates PRICE DROPS only. A new listing or a restock is reported
-# whatever it costs, subject to max_markup above.
-watchlist:
-- note: cheap realistic mainlines
-  query: '*'
-  target_price: 300.0
-  brand: Hot Wheels
-  realism: Realistic
-  pack_min: 1
-  pack_max: 1
-- note: multipacks
-  query: '*'
-  target_price: 900.0
-  brand: Hot Wheels
-  pack_min: 4
-  pack_max: 10
-- note: Majorette cheap realistic singles
-  query: '*'
-  target_price: 300.0
-  brand: Majorette
-  realism: Realistic
-  pack_min: 1
-  pack_max: 1
-- note: Majorette multipacks
-  query: '*'
-  target_price: 900.0
-  brand: Majorette
-  pack_min: 4
-  pack_max: 10
-- note: Matchbox cheap realistic singles
-  query: '*'
-  target_price: 400.0
-  brand: Matchbox
-  realism: Realistic
-  pack_min: 1
-  pack_max: 1
-- note: Matchbox multipacks
-  query: '*'
-  target_price: 1500.0
-  brand: Matchbox
-  pack_min: 4
-  pack_max: 10
+  - blinkit
+  - instamart
+  - zepto
+  - bigbasket
 
 sources:
   amazon_in:
@@ -177,21 +90,17 @@ sources:
     enabled: false
     max_pages: 3
   firstcry:
-    enabled: true
+    enabled: false
     # 20 products per page; Hot Wheels alone is ~290, so 15 covers it.
     max_pages: 15
-  # Off. Blinkit is the only browser-driven source, and it cannot run on CI:
-  # the catalogue is scoped to a delivery address held in a persistent Chromium
-  # profile, and a fresh runner outside India captures no catalog JSON at all.
-  # Keeping it on meant a headless Chromium running on a personal machine
-  # around the clock, which is not worth ~10 in-stock listings out of 3,700.
-  # Re-enable only if you are content to scrape locally again.
   blinkit:
-    enabled: false
+    enabled: true
   instamart:
-    enabled: false
+    enabled: true
   zepto:
-    enabled: false
+    enabled: true
+  bigbasket:
+    enabled: true
 
   # Specialty and general shops running on Shopify. Every Shopify store exposes
   # /products.json and /search/suggest.json, so one adapter serves them all and
@@ -202,34 +111,34 @@ sources:
   #   mode: search   run the configured queries. Right for a big general
   #                  retailer, where paging the catalogue means 40,000 books.
   shopify:
-    enabled: true
+    enabled: false
     mode: catalog
     max_pages: 6
     stores:
       - name: kinderlogs
         label: "Kinder Logs"
         domain: kinderlogs.in
-        enabled: true
+        enabled: false
       - name: itsfun
         label: "ItsFun"
         domain: itsfun.in
-        enabled: true
+        enabled: false
       - name: zoomsters
         label: "Zoomsters"
         domain: zoomsters.in
-        enabled: true
+        enabled: false
       - name: blueballoon
         label: "Blue Balloon Toys"
         domain: blueballoontoys.com
-        enabled: true
+        enabled: false
       - name: giftgalaxy
         label: "Gift Galaxy"
         domain: giftgalaxy.in
-        enabled: true
+        enabled: false
       - name: peppystore
         label: "The Peppy Store"
         domain: thepeppystore.in
-        enabled: true
+        enabled: false
       - name: toycollectors
         label: "Toy Collectors India"
         domain: toycollectorsindia.com
@@ -237,53 +146,53 @@ sources:
       - name: kidsinfy
         label: "Kidsinfy"
         domain: kidsinfy.in
-        enabled: true
+        enabled: false
       # General toy retailers: their catalogues are mostly not diecast, so
       # search a few terms rather than paging thousands of unrelated products.
       - name: funcorp
         label: "FunCorp"
         domain: funcorp.in
-        enabled: true
+        enabled: false
         mode: search
       - name: toysindia
         label: "Toys India"
         domain: toys-india.com
-        enabled: true
+        enabled: false
         mode: search
       - name: toycra
         label: "Toycra"
         domain: toycra.com
-        enabled: true
+        enabled: false
         mode: search
       - name: krazycaterpillar
         label: "Krazy Caterpillar"
         domain: krazycaterpillar.com
-        enabled: true
+        enabled: false
         mode: search
       - name: toymarche
         label: "Toymarche"
         domain: toymarche.com
-        enabled: true
+        enabled: false
         mode: search
       - name: jaimantoys
         label: "Jaiman Toys"
         domain: jaimantoys.com
-        enabled: true
+        enabled: false
         mode: search
       - name: crossword
         label: "Crossword"
         domain: crossword.in
-        enabled: true
+        enabled: false
         mode: search          # a bookshop; searching beats paging the catalogue
       - name: bigsmall
         label: "Bigsmall"
         domain: bigsmall.in
-        enabled: true
+        enabled: false
         mode: search
 
   # WooCommerce shops expose a public Store API at /wp-json/wc/store/v1.
   woocommerce:
-    enabled: true
+    enabled: false
     per_page: 50
     stores:
       - name: planetsuperheroes
@@ -297,7 +206,7 @@ sources:
       - name: gbuy
         label: "Gbuy"
         domain: gbuy.in
-        enabled: true
+        enabled: false
 
 # Stores with no public product API - they run custom platforms, so the generic
 # Shopify/WooCommerce adapters cannot reach them. Each needs a bespoke HTML

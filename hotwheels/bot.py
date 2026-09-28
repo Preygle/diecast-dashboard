@@ -229,7 +229,15 @@ def send_with_photos(tg: Any, alerts_list: list[Any], text: str,
         if sent:
             # The digest already went out; only the pictures were lost.
             return sent, "text"
-        tg.send(text)
+        try:
+            tg.send(text)
+        except notify.NotifyError as exc2:
+            # Telegram is unreachable, not merely unhappy about a photo - which
+            # happens for real: an ISP blocking api.telegram.org times out every
+            # call. Report nothing sent so the caller logs a failed delivery
+            # instead of dying, and the alert is retried next run.
+            print(f"  text fallback also failed: {exc2}")
+            return [], "text"
         return ["telegram"], "text"
 
 
@@ -587,11 +595,21 @@ def poll(conn: Any, cfg: Any, tg: Any, labels: dict[str, str],
     The cursor is only advanced past a message once its reply has been sent,
     so a crash mid-batch repeats that message rather than swallowing it.
     """
+    from . import notify
+
     raw = db.get_state(conn, OFFSET)
     offset = int(raw) + 1 if raw and raw.lstrip("-").isdigit() else None
 
     handled: list[tuple[str, str]] = []
-    for update in tg.updates(offset=offset)[:limit]:
+    try:
+        pending = tg.updates(offset=offset)
+    except notify.NotifyError as exc:
+        # A blip reaching Telegram must not fail the run. The cursor is
+        # untouched, so whatever was said is still waiting next time.
+        print(f"  could not fetch commands: {exc}")
+        return handled
+
+    for update in pending[:limit]:
         uid = update.get("update_id")
         msg = update.get("message") or update.get("channel_post") or {}
         text = msg.get("text") or ""

@@ -1,11 +1,13 @@
+# DISABLED for the same reason as watch-fast: quick-commerce cannot be
+# scraped from a GitHub runner.
 name: Watch (full sweep)
 
 # Every enabled shop, every query. Catches the long-tail collector marques the
 # fast cycle does not ask about. Offset from :00 so it does not start in the
 # same minute as a fast run and rate-limit it.
 on:
-  schedule:
-    - cron: "11,31,51 * * * *"
+  # schedule:
+  #   - cron: "11,31,51 * * * *"
   workflow_dispatch:
 
 concurrency:

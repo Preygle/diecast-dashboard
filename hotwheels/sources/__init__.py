@@ -15,7 +15,7 @@ from .amazon_in import AmazonIN
 from .base import Item, Source
 from .firstcry import FirstCry
 from .flipkart import Flipkart
-from .quickcom import Blinkit, Instamart, Zepto
+from .quickcom import BigBasket, Blinkit, Instamart, Zepto
 from .shopify import ShopifyStore
 from .woocommerce import WooStore
 
@@ -24,6 +24,7 @@ REGISTRY: dict[str, type[Source]] = {
     AmazonIN.name: AmazonIN,
     Flipkart.name: Flipkart,
     FirstCry.name: FirstCry,
+    BigBasket.name: BigBasket,
     Blinkit.name: Blinkit,
     Instamart.name: Instamart,
     Zepto.name: Zepto,
@@ -32,7 +33,8 @@ REGISTRY: dict[str, type[Source]] = {
 # Sources that need a real browser session: quick-commerce for location
 # cookies and JS-rendered catalogs, Flipkart because it fingerprints TLS
 # clients and 403s plain HTTP requests.
-BROWSER_SOURCES = {Flipkart.name, Blinkit.name, Instamart.name, Zepto.name}
+BROWSER_SOURCES = {Flipkart.name, Blinkit.name, Instamart.name, Zepto.name,
+                   BigBasket.name}
 
 PLATFORMS = {"shopify": ShopifyStore, "woocommerce": WooStore}
 
@@ -92,5 +94,6 @@ __all__ = [
     "Item", "Source", "REGISTRY", "BROWSER_SOURCES", "PLATFORMS",
     "build_sources", "source_labels", "store_definitions",
     "AmazonIN", "Flipkart", "FirstCry", "Blinkit", "Instamart", "Zepto",
+    "BigBasket",
     "ShopifyStore", "WooStore",
 ]

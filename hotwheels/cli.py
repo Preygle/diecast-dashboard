@@ -319,7 +319,8 @@ def cmd_setup(args: argparse.Namespace) -> int:
     cfg = config.load(args.config)
     cls = REGISTRY.get(args.source)
     if cls is None or not hasattr(cls, "setup"):
-        print(f"'{args.source}' has no setup step. Options: blinkit, instamart, zepto")
+        print(f"'{args.source}' has no setup step. "
+              "Options: blinkit, instamart, zepto, bigbasket")
         return 1
 
     src = cls(cfg)
@@ -440,7 +441,7 @@ def main() -> int:
     s.set_defaults(fn=cmd_regroup)
 
     s = sub.add_parser("setup", help="set a quick-commerce delivery address by hand (one time)")
-    s.add_argument("source", choices=["blinkit", "instamart", "zepto"])
+    s.add_argument("source", choices=["blinkit", "instamart", "zepto", "bigbasket"])
     s.set_defaults(fn=cmd_setup)
 
     s = sub.add_parser("watch", help="manage the watchlist")

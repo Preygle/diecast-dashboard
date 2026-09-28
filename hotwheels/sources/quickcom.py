@@ -24,12 +24,15 @@ from ..normalize import clean_text, is_target_diecast, parse_price
 from .base import Item, Source, persistent_context
 
 # Key aliases seen across the three APIs.
-NAME_KEYS = ("name", "display_name", "product_name", "title", "displayName", "productName")
+NAME_KEYS = ("name", "display_name", "product_name", "title", "displayName",
+             "productName", "desc")   # `desc` is BigBasket's title field
 PRICE_KEYS = (
     "price", "offer_price", "selling_price", "sellingPrice", "discountedSellingPrice",
     "offerPrice", "final_price", "discounted_price", "storePrice",
+    "sp",   # BigBasket: pricing.discount.prim_price.sp
 )
-MRP_KEYS = ("mrp", "market_price", "strike_price", "originalPrice", "mrpPrice", "listPrice")
+MRP_KEYS = ("mrp", "market_price", "strike_price", "originalPrice", "mrpPrice",
+            "listPrice")
 ID_KEYS = ("product_id", "productId", "id", "sku", "variant_id", "variantId", "item_id")
 IMG_KEYS = ("image_url", "imageUrl", "image", "images", "product_image", "imagePath")
 STOCK_KEYS = ("inventory", "in_stock", "available", "inStock", "availableQuantity", "stock")
@@ -362,3 +365,35 @@ class Zepto(QuickCommerce):
 
     def product_url(self, obj: dict[str, Any], sku: str) -> str:
         return f"https://www.zepto.com/pn/x/pvid/{sku}"
+
+
+class BigBasket(QuickCommerce):
+    """BigBasket.
+
+    Sits behind Akamai, which answers a fresh headless profile with a bare
+    "Access Denied" page - no catalogue, no error. Like Instamart it therefore
+    needs `cli.py setup bigbasket` once, in a visible window, so the profile
+    carries a cleared challenge into later runs.
+
+    Its search payload nests the selling price under
+    `pricing.discount.prim_price.sp` and calls the title `desc`; both are
+    aliased into the shared walker rather than parsed specially.
+    """
+
+    name = "bigbasket"
+    label = "BigBasket"
+    search_url = "https://www.bigbasket.com/ps/?q={q}"
+    home_url = "https://www.bigbasket.com/"
+    api_hints = ("/listing-svc/v2/products", "/listing-svc/", "/product/facet-search",
+                 "/custompage/searchldp")
+    # Not a 10-minute service everywhere; slots vary by area.
+    eta = "same day"
+
+    async def prime(self, ctx: Any) -> None:
+        # BigBasket binds the catalogue to a city and address chosen in its UI
+        # and signs requests with a CSRF token, so there is nothing useful to
+        # forge here - the saved profile from `setup` is what makes it work.
+        return None
+
+    def product_url(self, obj: dict[str, Any], sku: str) -> str:
+        return f"https://www.bigbasket.com/pd/{sku}/"

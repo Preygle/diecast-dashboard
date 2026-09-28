@@ -1,3 +1,12 @@
+# DISABLED. Every source is now quick-commerce - Blinkit, Instamart, Zepto,
+# BigBasket - and none of them work from a GitHub runner: the catalogue is
+# scoped to a delivery address held in a persistent Chromium profile, Instamart
+# and BigBasket answer a fresh datacentre session with a bot challenge, and the
+# runner is not in India. Tested, not assumed: Blinkit captured no catalog JSON
+# and BigBasket returned "Access Denied".
+#
+# Scheduled triggers are commented out rather than deleted, because they work
+# fine for the HTTP shops - restore them if those are ever re-enabled.
 name: Watch (fast)
 
 # The watched brands at the shops that stock them near MRP. About a minute,
@@ -8,8 +17,8 @@ name: Watch (fast)
 # every 5-15 minutes", not a guarantee. A machine you control will always be
 # punctual; this one is free and does not run on your laptop.
 on:
-  schedule:
-    - cron: "*/5 * * * *"
+  # schedule:
+  #   - cron: "*/5 * * * *"
   workflow_dispatch:
 
 # A slow run must never pile up on top of the next scheduled one.
