@@ -155,6 +155,26 @@ def main() -> int:
                 "https://example.com/x.jpg")
     ok &= check("no image stays no image", notify.thumb_url(None), None)
 
+    print("ntfy formatting")
+    # The photo has to be uploaded, not linked: ntfy records a linked URL with
+    # no type and no size, so the app can only offer it as a file to download.
+    ok &= check("HTML is converted to markdown",
+                notify.Ntfy._markdown("<b>Car</b> and <i>x</i>"), "**Car** and _x_")
+    ok &= check("escaped entities are decoded",
+                notify.Ntfy._markdown("Fast &amp; Furious"), "Fast & Furious")
+    # An HTTP header carries no real newline, so ntfy expands a literal
+    # backslash-n instead. Written with chr() to keep the intent unmistakable.
+    NL, CR, BS = chr(10), chr(13), chr(92)
+    ok &= check("a newline becomes ntfy's literal escape",
+                notify.Ntfy._header_safe("a" + NL + "b"), "a" + BS + "nb")
+    ok &= check("a carriage return is dropped",
+                notify.Ntfy._header_safe("a" + CR + NL + "b"), "a" + BS + "nb")
+    ok &= check("beyond latin-1 is replaced rather than fatal",
+                notify.Ntfy._header_safe("caf" + chr(0x2014) + "e"),
+                "caf?e")
+    ok &= check("a long digest is truncated to fit a header",
+                len(notify.Ntfy._header_safe("x" * 5000)) <= 1400, True)
+
     print("photo delivery")
     # The reported shape is what the send log records, so it has to describe
     # what actually went out - not what was planned.

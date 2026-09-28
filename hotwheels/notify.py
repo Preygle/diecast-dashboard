@@ -180,6 +180,16 @@ class Discord:
             raise NotifyError(f"discord webhook HTTP {r.status_code}: {r.text[:200]}")
 
 
+# Shop CDNs serve a placeholder, or nothing, to a client with no UA. Defined
+# here rather than imported from sources.base to keep notifications free of any
+# dependency on the scraping side.
+FETCH_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+
+TITLE = "Diecast watchdog"
+TAGS = "red_car"
+
+
 @dataclass
 class Ntfy:
     """ntfy.sh push, for networks that block Telegram.
@@ -200,27 +210,69 @@ class Ntfy:
 
     def send(self, text: str, *, image: str | None = None,
              click: str | None = None) -> None:
-        # ntfy renders Markdown when asked; the alert text is Telegram HTML.
-        body = text.replace("<b>", "**").replace("</b>", "**")
-        body = body.replace("<i>", "_").replace("</i>", "_")
-        body = (body.replace("&amp;", "&").replace("&lt;", "<")
-                    .replace("&gt;", ">"))
+        """Push one message, with the casting's photo shown inline.
 
-        headers = {
-            "Title": "Diecast watchdog",
-            "Tags": "red_car",
-            "Markdown": "yes",
-        }
-        # A picture is the whole point for a casting whose title says nothing.
+        Pointing ntfy at the shop's CDN with the `Attach` header does not give
+        a picture: ntfy records the URL with no type and no size, so the app
+        can only offer it as a file to download. To get an inline preview the
+        bytes have to be ntfy's own, which means uploading them - and when the
+        body is the image, the text has to travel in the `Message` header.
+        """
+        body = self._markdown(text)
+
         if image:
-            headers["Attach"] = image
+            try:
+                pic = httpx.get(image, timeout=30, follow_redirects=True,
+                                headers={"User-Agent": FETCH_UA})
+                pic.raise_for_status()
+                ctype = pic.headers.get("content-type", "")
+                if pic.content and ctype.startswith("image/"):
+                    self._put_image(pic.content, ctype, body, click)
+                    return
+            except Exception as exc:
+                # A missing picture must never cost the alert.
+                print(f"  ntfy: could not attach the photo ({type(exc).__name__}); "
+                      f"sending text")
+
+        headers = {"Title": TITLE, "Tags": TAGS, "Markdown": "yes"}
         if click:
             headers["Click"] = click
+        self._post(body.encode("utf-8"), headers)
 
+    def _put_image(self, blob: bytes, ctype: str, body: str,
+                   click: str | None) -> None:
+        ext = {"image/png": "png", "image/webp": "webp",
+               "image/gif": "gif"}.get(ctype, "jpg")
+        headers = {
+            "Title": TITLE,
+            "Tags": TAGS,
+            "Filename": f"casting.{ext}",
+            # HTTP headers carry no real newlines; ntfy expands a literal
+            # backslash-n instead. Titles also carry accents, and a header is
+            # latin-1 at best, so anything beyond that is replaced rather than
+            # allowed to blow up the request.
+            "Message": self._header_safe(body),
+        }
+        if click:
+            headers["Click"] = click
+        self._post(blob, headers)
+
+    @staticmethod
+    def _markdown(text: str) -> str:
+        body = text.replace("<b>", "**").replace("</b>", "**")
+        body = body.replace("<i>", "_").replace("</i>", "_")
+        return (body.replace("&amp;", "&").replace("&lt;", "<")
+                    .replace("&gt;", ">"))
+
+    @staticmethod
+    def _header_safe(body: str) -> str:
+        flat = body[:1400].replace(chr(13), "").replace(chr(10), chr(92) + "n")
+        return flat.encode("latin-1", "replace").decode("latin-1")
+
+    def _post(self, content: bytes, headers: dict[str, str]) -> None:
         try:
-            r = httpx.post(f"{self.server}/{self.topic}",
-                           content=body[:4000].encode("utf-8"),
-                           headers=headers, timeout=30)
+            r = httpx.put(f"{self.server}/{self.topic}", content=content,
+                          headers=headers, timeout=60)
         except Exception as exc:
             raise NotifyError(f"ntfy failed: {exc}") from exc
         if r.status_code >= 300:

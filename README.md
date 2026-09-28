@@ -304,8 +304,16 @@ a crashed alert run; now it means a logged failure and a retry.
 
 **ntfy.sh is the fallback**, chosen because it needs no account and no webhook:
 publishing is a POST to `https://ntfy.sh/<topic>` and subscribing is entering
-the same topic in the app. Alerts carry the casting's photo as an attachment and
-the listing as the tap target.
+the same topic in the app.
+
+The photo is **uploaded, not linked**. Pointing ntfy at the shop's CDN with the
+`Attach` header records a URL with no type and no size, so the app can only
+offer it as a file to download — which is not a picture. Uploading the bytes
+makes them ntfy's own (`image/png`, 22KB) and the app renders them inline. The
+cost is that when the body is the image, the text has to travel in the `Message`
+header: newlines become ntfy's literal `
+`, anything past latin-1 is replaced,
+and a long digest is truncated to fit.
 
 A topic is a shared secret, not an authenticated channel - anyone who knows the
 name can read it - so `NTFY_TOPIC` holds a long random string.
