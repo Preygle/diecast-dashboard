@@ -110,7 +110,24 @@ def cmd_alerts(args: argparse.Namespace) -> int:
     # Photos go through the Telegram client directly, because an album is not
     # something `broadcast` can express. Discord still gets the text digest.
     tg, dc = notify.build()
+    nt = notify.build_ntfy()
     shape = "text"
+
+    # ntfy first when Telegram is unreachable, because on this network it is
+    # the only channel that works - and a push with the casting's photo is the
+    # whole point for a title like "HW Torque Free Wheel".
+    if nt is not None:
+        first_pic = next((a.image_url for a in found if a.image_url), None)
+        try:
+            nt.send(text, image=notify.thumb_url(first_pic),
+                    click=next((a.url for a in found if a.url), None))
+            ntfy_ok = True
+        except notify.NotifyError as exc:
+            print(f"  ntfy failed: {exc}")
+            ntfy_ok = False
+    else:
+        ntfy_ok = False
+
     if tg is not None and photos:
         sent, shape = bot.send_with_photos(tg, found, text, lambda s: labels.get(s, s))
         if dc is not None:
@@ -121,6 +138,9 @@ def cmd_alerts(args: argparse.Namespace) -> int:
                 print(f"  discord failed: {exc}")
     else:
         sent = notify.broadcast(text)
+
+    if ntfy_ok and "ntfy" not in sent:
+        sent.append("ntfy")
 
     # Record the attempt either way. alert_state says what was *seen*; this is
     # the only record of what was actually delivered, which is the question
@@ -133,6 +153,9 @@ def cmd_alerts(args: argparse.Namespace) -> int:
                 db.log_send(conn, channel=channel,
                             shape=shape if channel == "telegram" else "text",
                             alerts=len(found), kinds=kinds, ok=True)
+        elif ntfy_ok:
+            db.log_send(conn, channel="ntfy", shape="text", alerts=len(found),
+                        kinds=kinds, ok=True)
         else:
             db.log_send(conn, channel="telegram", shape=shape, alerts=len(found),
                         kinds=kinds, ok=False, error="no channel accepted it")

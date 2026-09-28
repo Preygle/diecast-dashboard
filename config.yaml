@@ -68,10 +68,13 @@ queries:
 # The subset polled on the fast cycle. A restock reaches you at the speed of
 # this list, so it holds only the brands actually watched - the long tail of
 # collector marques is found by the full sweep a few times an hour.
+# One query, not three. These are apps, not APIs: three searches every five
+# minutes is 36 an hour per shop, and Blinkit answered that by serving the
+# search page without its catalogue XHR at all - no error, just nothing. Hot
+# Wheels is where a case drop lands; the other brands are covered by the full
+# sweep, which runs rarely.
 fast_queries:
   - "hot wheels"
-  - "matchbox"
-  - "majorette"
 
 # Shops polled on the fast cycle. All four, because quick-commerce is the whole
 # point now - these are the only places a case drop appears at MRP and sells out

@@ -39,7 +39,8 @@ def load_env(path: Path | None = None) -> dict[str, str]:
                 continue
             key, _, val = line.partition("=")
             values[key.strip()] = val.strip()
-    for key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "DISCORD_WEBHOOK_URL"):
+    for key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "DISCORD_WEBHOOK_URL",
+                "NTFY_TOPIC", "NTFY_SERVER"):
         if os.environ.get(key):
             values[key] = os.environ[key]
     return values
@@ -179,6 +180,53 @@ class Discord:
             raise NotifyError(f"discord webhook HTTP {r.status_code}: {r.text[:200]}")
 
 
+@dataclass
+class Ntfy:
+    """ntfy.sh push, for networks that block Telegram.
+
+    The VIT campus network drops api.telegram.org at the IP level - by
+    hostname and by address - while leaving ntfy.sh, Discord and Pushover
+    open. ntfy is the one that needs no account and no webhook to create:
+    publishing is a POST to https://ntfy.sh/<topic> and subscribing is
+    entering the same topic in the app.
+
+    A topic is a shared secret, not an authenticated channel: anyone who
+    knows the name can read it. So the topic must be long and random, which
+    is what `cli.py notify ntfy` generates.
+    """
+
+    topic: str
+    server: str = "https://ntfy.sh"
+
+    def send(self, text: str, *, image: str | None = None,
+             click: str | None = None) -> None:
+        # ntfy renders Markdown when asked; the alert text is Telegram HTML.
+        body = text.replace("<b>", "**").replace("</b>", "**")
+        body = body.replace("<i>", "_").replace("</i>", "_")
+        body = (body.replace("&amp;", "&").replace("&lt;", "<")
+                    .replace("&gt;", ">"))
+
+        headers = {
+            "Title": "Diecast watchdog",
+            "Tags": "red_car",
+            "Markdown": "yes",
+        }
+        # A picture is the whole point for a casting whose title says nothing.
+        if image:
+            headers["Attach"] = image
+        if click:
+            headers["Click"] = click
+
+        try:
+            r = httpx.post(f"{self.server}/{self.topic}",
+                           content=body[:4000].encode("utf-8"),
+                           headers=headers, timeout=30)
+        except Exception as exc:
+            raise NotifyError(f"ntfy failed: {exc}") from exc
+        if r.status_code >= 300:
+            raise NotifyError(f"ntfy HTTP {r.status_code}: {r.text[:200]}")
+
+
 def build(env: dict[str, str] | None = None) -> tuple[Telegram | None, Discord | None]:
     """Whichever channels are configured. Both optional, at least one needed."""
     env = env if env is not None else load_env()
@@ -188,6 +236,15 @@ def build(env: dict[str, str] | None = None) -> tuple[Telegram | None, Discord |
     return tg, dc
 
 
+def build_ntfy(env: dict[str, str] | None = None) -> Ntfy | None:
+    """Kept separate from `build` so existing two-channel callers still work."""
+    env = env if env is not None else load_env()
+    topic = env.get("NTFY_TOPIC")
+    if not topic:
+        return None
+    return Ntfy(topic, env.get("NTFY_SERVER") or "https://ntfy.sh")
+
+
 def broadcast(text: str, env: dict[str, str] | None = None) -> list[str]:
     """Send to every configured channel. Returns the channels that succeeded.
 
@@ -195,8 +252,9 @@ def broadcast(text: str, env: dict[str, str] | None = None) -> list[str]:
     never suppress the Telegram alert.
     """
     tg, dc = build(env)
+    nt = build_ntfy(env)
     sent: list[str] = []
-    for name, sender in (("telegram", tg), ("discord", dc)):
+    for name, sender in (("telegram", tg), ("discord", dc), ("ntfy", nt)):
         if sender is None:
             continue
         try:

@@ -280,6 +280,39 @@ This is the trade the project cannot avoid: a case drop at MRP appears on these
 apps and sells out in minutes, and reaching them means running where an Indian
 browser session lives.
 
+### Polling an app, not an API
+
+These are phone apps behind bot protection, and they do not tolerate API-rate
+traffic. Three queries every five minutes is thirty-six searches an hour per
+shop, and Blinkit's answer to that was to serve the search page **without its
+catalogue XHR** - no error, no 429, just nothing captured. It looks exactly
+like "nothing in stock".
+
+So the cycle is one query (`hot wheels`, where case drops land) every ten
+minutes: six searches an hour. The other brands come from the full sweep, which
+runs rarely. Blinkit recovered as soon as the rate dropped.
+
+If a shop starts reporting `no catalog JSON captured` across every query, that
+is the signal - slow down rather than debug the parser.
+
+### Notification channels
+
+`api.telegram.org` is blocked on some networks at the IP level, hostname and
+address alike - the VIT campus network drops it intermittently while leaving
+Discord, ntfy.sh, Pushover and Gmail SMTP open. A blocked Telegram used to mean
+a crashed alert run; now it means a logged failure and a retry.
+
+**ntfy.sh is the fallback**, chosen because it needs no account and no webhook:
+publishing is a POST to `https://ntfy.sh/<topic>` and subscribing is entering
+the same topic in the app. Alerts carry the casting's photo as an attachment and
+the listing as the tap target.
+
+A topic is a shared secret, not an authenticated channel - anyone who knows the
+name can read it - so `NTFY_TOPIC` holds a long random string.
+
+All configured channels are tried, and each is logged separately, so a run that
+reaches ntfy but not Telegram is visible as exactly that.
+
 ### One-time unlock per shop
 
 Three of the four bind their catalogue to an address chosen in their own UI, and
